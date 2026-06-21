@@ -1,0 +1,17 @@
+# Core deep-learning stack
+torch>=2.0
+torchvision>=0.15
+
+# Numerics / imaging
+numpy>=1.23
+Pillow>=9.0
+scipy>=1.9
+
+# Visualization (prototype activations, part-segmentation overlays)
+matplotlib>=3.6
+
+# Backbones for the "latest" POCs (DINO ViT for PDiscoFormer, ConvNeXt for PIP-Net)
+timm>=0.9
+
+# Progress bars / utilities
+tqdm>=4.64
