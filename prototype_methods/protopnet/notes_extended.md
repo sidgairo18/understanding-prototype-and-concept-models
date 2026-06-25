@@ -262,7 +262,7 @@ Write $z,a,b$ for $\mathbf z_l^{c},\mathbf a_l^{c},\mathbf b_l^{c}$. Bound the t
 **Factor 1** — use the second part of (A2b), $\lVert z-b\rVert_2^2\le 1-\delta$:
 
 $$
-\frac{\lVert z-a\rVert^2+1}{\lVert z-b\rVert^2+1} \ge \frac{1}{\lVert z-b\rVert^2+1} \ge \frac{1}{2-\delta}. \tag{1}
+\frac{\lVert z-a\rVert^2+1}{\lVert z-b\rVert^2+1} \ge \frac{1}{\lVert z-b\rVert^2+1} \ge \frac{1}{2-\delta}. \quad (1)
 $$
 
 **Factor 2** — triangle inequality $\lVert z-a\rVert\le\lVert z-b\rVert+\lVert a-b\rVert$, then
@@ -271,7 +271,7 @@ $\lVert z-a\rVert\le\sqrt{1+\delta}\,\lVert z-b\rVert$, i.e. $\lVert z-a\rVert^2
 Since also $\epsilon\le(1+\delta)\epsilon$,
 
 $$
-\lVert z-a\rVert^2+\epsilon\le(1+\delta)(\lVert z-b\rVert^2+\epsilon) \implies \frac{\lVert z-b\rVert^2+\epsilon}{\lVert z-a\rVert^2+\epsilon}\ge\frac{1}{1+\delta}. \tag{2}
+\lVert z-a\rVert^2+\epsilon\le(1+\delta)(\lVert z-b\rVert^2+\epsilon) \implies \frac{\lVert z-b\rVert^2+\epsilon}{\lVert z-a\rVert^2+\epsilon}\ge\frac{1}{1+\delta}. \quad (2)
 $$
 
 Multiplying (1)·(2): $\Psi_l^{c}\ge\frac{1}{(1+\delta)(2-\delta)}$. Summing the logs over the
@@ -292,7 +292,7 @@ using **(A2a)**.
 give $\lVert z-a\rVert^2\le(1+\delta)\lVert z-b\rVert^2$, hence
 
 $$
-\frac{\lVert z-a\rVert^2+1}{\lVert z-b\rVert^2+1} \le \frac{(1+\delta)\lVert z-b\rVert^2+1}{\lVert z-b\rVert^2+1} \le \frac{(1+\delta)\lVert z-b\rVert^2+(1+\delta)}{\lVert z-b\rVert^2+1}=1+\delta. \tag{3}
+\frac{\lVert z-a\rVert^2+1}{\lVert z-b\rVert^2+1} \le \frac{(1+\delta)\lVert z-b\rVert^2+1}{\lVert z-b\rVert^2+1} \le \frac{(1+\delta)\lVert z-b\rVert^2+(1+\delta)}{\lVert z-b\rVert^2+1}=1+\delta. \quad (3)
 $$
 
 **Factor 2 $\le 2-\delta$.** Reverse triangle inequality $\lVert z-a\rVert\ge\lVert z-b\rVert-\lVert a-b\rVert>0$
@@ -300,7 +300,7 @@ $$
 branch of (A2a) and the $\sqrt\epsilon$ slack, yields
 
 $$
-\frac{\lVert z-b\rVert^2+\epsilon}{\lVert z-a\rVert^2+\epsilon}\le 2-\delta. \tag{7}
+\frac{\lVert z-b\rVert^2+\epsilon}{\lVert z-a\rVert^2+\epsilon}\le 2-\delta. \quad (7)
 $$
 
 (Inequalities (3) and (7) keep the paper's numbering; the in-between algebra is routine
@@ -451,7 +451,7 @@ exactly at the prototype $\mathbf p_l^{k}$** — the prototype *is* the most lik
 patch for that class. Substituting (eq. 10 in the supplement):
 
 $$
-P(Y=k\mid\mathbf X=\mathbf x)=\frac{\big[\prod_{l=1}^{m_k}d_l^{k}(\lVert f_l^{k}(\mathbf x)-\mathbf p_l^{k}\rVert_2)\big]\,P(Y=k)}{\sum_{c=1}^K\big[\prod_{l=1}^{m_c}d_l^{c}(\lVert f_l^{c}(\mathbf x)-\mathbf p_l^{c}\rVert_2)\big]\,P(Y=c)}. \tag{10}
+P(Y=k\mid\mathbf X=\mathbf x)=\frac{\big[\prod_{l=1}^{m_k}d_l^{k}(\lVert f_l^{k}(\mathbf x)-\mathbf p_l^{k}\rVert_2)\big]\,P(Y=k)}{\sum_{c=1}^K\big[\prod_{l=1}^{m_c}d_l^{c}(\lVert f_l^{c}(\mathbf x)-\mathbf p_l^{c}\rVert_2)\big]\,P(Y=c)}. \quad (10)
 $$
 
 ### 3.6 ProtoPNet's actual softmax *is* equation (10)
@@ -467,7 +467,7 @@ $$
 which simplifies (turn $\exp\sum\log$ into a product) to (eq. 11):
 
 $$
-P(Y=k\mid\mathbf X=\mathbf x)=\frac{\prod_{l=1}^{m_k}\dfrac{\lVert f_l^{k}(\mathbf x)-\mathbf p_l^{k}\rVert_2^2+1}{\lVert f_l^{k}(\mathbf x)-\mathbf p_l^{k}\rVert_2^2+\epsilon}}{\sum_{c=1}^K\prod_{l=1}^{m_c}\dfrac{\lVert f_l^{c}(\mathbf x)-\mathbf p_l^{c}\rVert_2^2+1}{\lVert f_l^{c}(\mathbf x)-\mathbf p_l^{c}\rVert_2^2+\epsilon}}. \tag{11}
+P(Y=k\mid\mathbf X=\mathbf x)=\frac{\prod_{l=1}^{m_k}\dfrac{\lVert f_l^{k}(\mathbf x)-\mathbf p_l^{k}\rVert_2^2+1}{\lVert f_l^{k}(\mathbf x)-\mathbf p_l^{k}\rVert_2^2+\epsilon}}{\sum_{c=1}^K\prod_{l=1}^{m_c}\dfrac{\lVert f_l^{c}(\mathbf x)-\mathbf p_l^{c}\rVert_2^2+1}{\lVert f_l^{c}(\mathbf x)-\mathbf p_l^{c}\rVert_2^2+\epsilon}}. \quad (11)
 $$
 
 **Comparing (10) and (11)**, ProtoPNet is the special case where:
