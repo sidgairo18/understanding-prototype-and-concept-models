@@ -177,7 +177,7 @@ $$
 
 The L1 penalty applies **only to cross-class weights** (own-class connections are left
 near $+1$). Why we want $w_h^{(k,j)}\approx 0$ for $\mathbf p_j\notin\mathbf P_k$: it makes
-the model rely **less on negative reasoning** of the form *"this is a $\text{class-}k'$ bird
+the model rely **less on negative reasoning** of the form *"this is a $\text{class-}k^{\prime}$ bird
 because it contains a patch that is **not** prototypical of class $k$."* We prefer
 explanations built from *positive* evidence ("this looks like that $\text{class-}k$ part").
 
@@ -212,7 +212,7 @@ $\mathbf x$ with correct label $c$:
 | $\mathbf a_l^{k}$ | value **after** projection |
 | $\mathbf z_l^{k}$ | nearest patch of $f(\mathbf x)$ to $\mathbf b_l^{k}$ (before projection), $=\arg\min_{\tilde{\mathbf z}}\lVert\tilde{\mathbf z}-\mathbf b_l^{k}\rVert_2$ |
 | $c$ | correct class of $\mathbf x$ |
-| $m'$ | number of prototypes per class (assumed equal across classes) |
+| $m^{\prime}$ | number of prototypes per class (assumed equal across classes) |
 
 ### 2.2 Assumptions (and what each one *means*)
 
@@ -230,7 +230,7 @@ $\mathbf x$ with correct label $c$:
     $\lVert\mathbf a_l^{c}-\mathbf b_l^{c}\rVert_2\le(\sqrt{1+\delta}-1)\lVert\mathbf z_l^{c}-\mathbf b_l^{c}\rVert_2$
     **and** $\lVert\mathbf z_l^{c}-\mathbf b_l^{c}\rVert_2\le\sqrt{1-\delta}$.
     *"Correct-class prototypes are already close to a patch of $\mathbf x$ (so $\mathbf z\approx\mathbf b$) and move little."*
-- **(A3)** equal #prototypes per class, $m'$.
+- **(A3)** equal #prototypes per class, $m^{\prime}$.
 - **(A4)** the last layer is in its **sparse final state**: $w_h^{(k,j)}=1$ for
   $\mathbf p_j\in\mathbf P_k$ and $w_h^{(k,j)}=0$ for $\mathbf p_j\notin\mathbf P_k$.
   (This is what Stage 3 drives the weights toward, so the theorem describes the trained model.)
@@ -241,14 +241,14 @@ Because cross-class weights are $0$, the $\text{class-}k$ logit is just the **su
 prototypes' activations**:
 
 $$
-L_k\big(\mathbf x,\{\mathbf p_l^{k}\}\big) = \sum_{l=1}^{m'}\log\!\left(\frac{\lVert\mathbf z_l^{k}-\mathbf p_l^{k}\rVert_2^2+1}{\lVert\mathbf z_l^{k}-\mathbf p_l^{k}\rVert_2^2+\epsilon}\right).
+L_k\big(\mathbf x,\{\mathbf p_l^{k}\}\big) = \sum_{l=1}^{m^{\prime}}\log\!\left(\frac{\lVert\mathbf z_l^{k}-\mathbf p_l^{k}\rVert_2^2+1}{\lVert\mathbf z_l^{k}-\mathbf p_l^{k}\rVert_2^2+\epsilon}\right).
 $$
 
 Define the **per-prototype multiplicative change** of the logit caused by projection
 ($\mathbf b\to\mathbf a$):
 
 $$
-\Delta_k=L_k(\mathbf x,\{\mathbf a_l^{k}\})-L_k(\mathbf x,\{\mathbf b_l^{k}\})=\sum_{l=1}^{m'}\log\Psi_l^{k}, \qquad \Psi_l^{k}=\frac{\lVert\mathbf z_l^{k}-\mathbf a_l^{k}\rVert_2^2+1}{\lVert\mathbf z_l^{k}-\mathbf b_l^{k}\rVert_2^2+1}\cdot\frac{\lVert\mathbf z_l^{k}-\mathbf b_l^{k}\rVert_2^2+\epsilon}{\lVert\mathbf z_l^{k}-\mathbf a_l^{k}\rVert_2^2+\epsilon}.
+\Delta_k=L_k(\mathbf x,\{\mathbf a_l^{k}\})-L_k(\mathbf x,\{\mathbf b_l^{k}\})=\sum_{l=1}^{m^{\prime}}\log\Psi_l^{k}, \qquad \Psi_l^{k}=\frac{\lVert\mathbf z_l^{k}-\mathbf a_l^{k}\rVert_2^2+1}{\lVert\mathbf z_l^{k}-\mathbf b_l^{k}\rVert_2^2+1}\cdot\frac{\lVert\mathbf z_l^{k}-\mathbf b_l^{k}\rVert_2^2+\epsilon}{\lVert\mathbf z_l^{k}-\mathbf a_l^{k}\rVert_2^2+\epsilon}.
 $$
 
 So the whole proof reduces to **bounding the single ratio $\Psi_l^{k}$** — from *below* for
@@ -275,10 +275,10 @@ $$
 $$
 
 Multiplying (1)·(2): $\Psi_l^{c}\ge\frac{1}{(1+\delta)(2-\delta)}$. Summing the logs over the
-$m'$ correct-class prototypes:
+$m^{\prime}$ correct-class prototypes:
 
 $$
-\Delta_c=\sum_{l}\log\Psi_l^{c}\ge m'\log\frac{1}{(1+\delta)(2-\delta)} \quad\Longleftrightarrow\quad -\Delta_c\le \underbrace{m'\log\big((1+\delta)(2-\delta)\big)}_{=\,\Delta_{\max}}.
+\Delta_c=\sum_{l}\log\Psi_l^{c}\ge m^{\prime}\log\frac{1}{(1+\delta)(2-\delta)} \quad\Longleftrightarrow\quad -\Delta_c\le \underbrace{m^{\prime}\log\big((1+\delta)(2-\delta)\big)}_{=\,\Delta_{\max}}.
 $$
 
 **The correct-class logit can drop by at most $\Delta_{\max}$.**
@@ -308,7 +308,7 @@ triangle-inequality manipulation — supplement eqs. (4)–(9).) Multiplying (3)
 $\Psi_l^{k}\le(1+\delta)(2-\delta)$, so
 
 $$
-\Delta_k=\sum_{l}\log\Psi_l^{k}\le m'\log\big((1+\delta)(2-\delta)\big)=\Delta_{\max}.
+\Delta_k=\sum_{l}\log\Psi_l^{k}\le m^{\prime}\log\big((1+\delta)(2-\delta)\big)=\Delta_{\max}.
 $$
 
 **Every wrong-class logit can rise by at most $\Delta_{\max}$.**
