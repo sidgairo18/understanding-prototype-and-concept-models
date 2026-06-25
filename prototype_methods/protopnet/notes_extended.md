@@ -27,8 +27,8 @@ You need a handful of objects from §2.1 before §2.2 makes sense. (See also
 | Symbol | Meaning |
 |---|---|
 | $f$ | the conv backbone **+ add-on 1×1 convs**; $\mathbf z = f(\mathbf x)$ is a $D\times h\times w$ feature map |
-| **patch** $\tilde{\mathbf z}$ | one spatial cell of $\mathbf z$, a $D$-vector with a receptive field back in the image |
-| $\mathbf p_j$ | the $j$-th **prototype**, a $D$-vector (same shape as a patch) |
+| **patch** $\tilde{\mathbf z}$ | one spatial cell of $\mathbf z$, a $D\text{-vector}$ with a receptive field back in the image |
+| $\mathbf p_j$ | the $j\text{-th}$ **prototype**, a $D\text{-vector}$ (same shape as a patch) |
 | $\mathbf P_k\subseteq\mathbf P$ | the prototypes **allocated to class $k$**; there are $m_k$ of them (paper: 10/class) |
 | $m$ | total prototypes $=\sum_k m_k$ |
 | $g_{\mathbf p_j}$ | the **prototype unit**: similarity of the best patch to $\mathbf p_j$ |
@@ -110,7 +110,7 @@ captured by different prototypes of the class.
 
 **Separation cost (Sep).** The leading minus sign means minimizing $\mathrm{Sep}$ =
 *maximizing* the distance to the nearest **other-class** prototype. Effect: patches of a
-class-$k$ image are pushed **away** from every non-class-$k$ prototype. (The paper notes
+$\text{class-}k$ image are pushed **away** from every $\text{non-class-}k$ prototype. (The paper notes
 the separation cost is *new to this work* — earlier prototype methods used only a
 cluster-style term.)
 
@@ -119,23 +119,23 @@ cluster-style term.)
 > ([model.py](model.py#L54-L59)), which records which class each prototype belongs to.
 
 **Why freeze $h$, and how it is initialized.** In stage 1 the last layer is held at a
-hand-set value. For a class-$k$ logit:
+hand-set value. For a $\text{class-}k$ logit:
 
 $$
 w_h^{(k,j)} = \begin{cases} +1 & \text{if } \mathbf p_j\in\mathbf P_k \quad(\text{own-class connection}) \\ -0.5 & \text{if } \mathbf p_j\notin\mathbf P_k \quad(\text{cross-class connection}) \end{cases}
 $$
 
-Intuition: a **positive** own-class connection means "this image looking like a class-$k$
-prototype *raises* its class-$k$ probability"; a **negative** cross-class connection means
-"looking like a *non*-$k$ prototype *lowers* class-$k$ probability." Fixing $h$ this way
-*forces the conv layers to do the work* — if a class-$k$ image's patch drifts too close to
-a non-$k$ prototype, the frozen negative weight inflates the cross-entropy loss, so SGD has
+Intuition: a **positive** own-class connection means "this image looking like a $\text{class-}k$
+prototype *raises* its $\text{class-}k$ probability"; a **negative** cross-class connection means
+"looking like a $\textit{non-}k$ prototype *lowers* $\text{class-}k$ probability." Fixing $h$ this way
+*forces the conv layers to do the work* — if a $\text{class-}k$ image's patch drifts too close to
+a $\text{non-}k$ prototype, the frozen negative weight inflates the cross-entropy loss, so SGD has
 to fix the latent space instead of papering over it with the classifier.
 
 Note the **separation cost and the negative connection push in the same direction**:
-together they make a class-$k$ prototype represent a concept that is *characteristic of
-class $k$ but absent from other classes*. (If a class-$k$ prototype captured a concept also
-present in non-$k$ images, those images would activate it strongly → larger separation
+together they make a $\text{class-}k$ prototype represent a concept that is *characteristic of
+class $k$ but absent from other classes*. (If a $\text{class-}k$ prototype captured a concept also
+present in $\text{non-}k$ images, those images would activate it strongly → larger separation
 cost *and* larger cross-entropy.)
 
 ### Stage 2 — Projection ("push") of prototypes
@@ -177,9 +177,9 @@ $$
 
 The L1 penalty applies **only to cross-class weights** (own-class connections are left
 near $+1$). Why we want $w_h^{(k,j)}\approx 0$ for $\mathbf p_j\notin\mathbf P_k$: it makes
-the model rely **less on negative reasoning** of the form *"this is a class-$k'$ bird
+the model rely **less on negative reasoning** of the form *"this is a $\text{class-}k'$ bird
 because it contains a patch that is **not** prototypical of class $k$."* We prefer
-explanations built from *positive* evidence ("this looks like that class-$k$ part").
+explanations built from *positive* evidence ("this looks like that $\text{class-}k$ part").
 
 **Why "convex".** Everything feeding $h$ is frozen, so the logits are a *linear* function
 of the now-fixed similarities; cross-entropy of a linear model plus an L1 term is a convex
@@ -202,7 +202,7 @@ program in $w_h$. This stage improves accuracy **without disturbing the latent s
 
 ### 2.1 New notation for the proof
 
-The proof re-indexes prototypes **by class**: $\mathbf p_l^{k}$ is the $l$-th prototype of
+The proof re-indexes prototypes **by class**: $\mathbf p_l^{k}$ is the $l\text{-th}$ prototype of
 class $k$, so $\mathbf P^k=\{\mathbf p_l^{k}\}_{l=1}^{m_k}$. For a fixed input image
 $\mathbf x$ with correct label $c$:
 
@@ -237,7 +237,7 @@ $\mathbf x$ with correct label $c$:
 
 ### 2.3 The logit under (A4)
 
-Because cross-class weights are $0$, the class-$k$ logit is just the **sum of its own
+Because cross-class weights are $0$, the $\text{class-}k$ logit is just the **sum of its own
 prototypes' activations**:
 
 $$
@@ -340,8 +340,8 @@ To get a feel for the assumptions, plug in $\delta=\tfrac9{16}$:
 
 The paper observes the requirement $\lVert\mathbf z^c-\mathbf b^c\rVert_2\le\tfrac{\sqrt7}{4}$
 is **empirically always satisfied**, and that the conditions are *tighter on the wrong
-classes than the correct one* — which is exactly what you'd expect: a class-$c$ image has
-**no** patch very close to a non-$c$ prototype, while projection pushes each non-$c$
+classes than the correct one* — which is exactly what you'd expect: a $\text{class-}c$ image has
+**no** patch very close to a $\text{non-}c$ prototype, while projection pushes each $\text{non-}c$
 prototype onto the closest patch *in its own class*, so $\lVert\mathbf a^k-\mathbf b^k\rVert$
 (movement) is generally much smaller than $\lVert\mathbf z^k-\mathbf b^k\rVert$ (the
 already-large distance). Hence the assumptions are reasonable, and **when they hold the
@@ -408,7 +408,7 @@ In words: *knowing an image's closest patches to a class's prototypes (plus that
 is of that class) leaves the **same** residual uncertainty about the image, no matter which
 class we condition on.* Because it is class-independent, this term **cancels** between
 numerator and denominator of Bayes' rule. (A simpler, more restrictive version: the closest
-patches to class-$c$ prototypes already pin down the pixel-level uncertainty, so the class
+patches to $\text{class-}c$ prototypes already pin down the pixel-level uncertainty, so the class
 label adds nothing.)
 
 After (i), the posterior depends **only on the latent-space term**:
@@ -438,7 +438,7 @@ $$
 
 ### 3.5 Choose the per-prototype density to encode case-based reasoning
 
-We *want* high probability for class $k$ exactly when the image has parts close to class-$k$
+We *want* high probability for class $k$ exactly when the image has parts close to $\text{class-}k$
 prototypes. So make each per-prototype density **decrease with distance to the prototype**:
 
 $$
@@ -457,7 +457,7 @@ $$
 ### 3.6 ProtoPNet's actual softmax *is* equation (10)
 
 Take ProtoPNet with last-layer weights $1$ (own-class) / $0$ (cross-class) — which is what
-Stage 3 produces. Its class-$k$ logit is $\sum_l g_{\mathbf p_l^{k}}(f(\mathbf x))$, and
+Stage 3 produces. Its $\text{class-}k$ logit is $\sum_l g_{\mathbf p_l^{k}}(f(\mathbf x))$, and
 using $\frac{d^2+1}{d^2+\epsilon}=1+\frac{1-\epsilon}{d^2+\epsilon}$, the softmax probability is
 
 $$
