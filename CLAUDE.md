@@ -59,7 +59,7 @@ push.py        # (ProtoPNet) prototype projection onto nearest training patches
 
 | # | Family | Paper | Role | POC folder | Status |
 |---|--------|-------|------|------------|--------|
-| 1 | Prototype | This Looks Like That (ProtoPNet), Chen et al. NeurIPS 2019 | first | `prototype_methods/protopnet/` | planned |
+| 1 | Prototype | This Looks Like That (ProtoPNet), Chen et al. NeurIPS 2019 | first | `prototype_methods/protopnet/` | done |
 | 2 | Prototype | PIP-Net, Nauta et al. CVPR 2023 | latest | `prototype_methods/pipnet/` | planned |
 | 3 | Part-prototype | SCOPS: Self-Supervised Co-Part Segmentation, Hung et al. CVPR 2019 | first | `part_prototype_methods/scops/` | planned |
 | 4 | Part-prototype | PDiscoFormer, Aniraj et al. ECCV 2024 | latest | `part_prototype_methods/pdiscoformer/` | planned |

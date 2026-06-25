@@ -3,6 +3,11 @@
 **Role in this repo:** the *first* important prototype method — the foundation the whole
 family builds on.
 
+**Status:** implemented & verified end-to-end (`model.py` + `push.py` + `train.py`). The
+core mechanism (prototype layer, cluster/separation losses, push, last-layer schedule, and
+the "this looks like that" visualization) is complete; defaults are tiny for fast runs.
+See `notes.md` for deviations.
+
 > Paper PDF: `papers/prototype_methods/This Looks Like That- Deep Learning for Interpretable Image Recognition.pdf`
 
 ## The idea in one paragraph

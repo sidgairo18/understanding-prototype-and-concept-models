@@ -19,6 +19,7 @@ class ProtoPNetConfig:
 
     # --- backbone / features ---
     backbone: str = "resnet34"        # from common.backbones; resnet50 in the paper
+    pretrained: bool = True           # ImageNet-pretrained backbone (set False for offline smoke tests)
     prototype_dim: int = 128          # D: add-on output channels = prototype dim
 
     # --- prototype layer ---

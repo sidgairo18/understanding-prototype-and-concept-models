@@ -45,7 +45,7 @@ $$
 Small distance ⇒ large similarity. The `max` over patches answers "*is this prototypical
 part present **anywhere** in the image?*" and also records **where** (which patch attained
 the max). Logits are $w_h$ times the vector of these $m$ similarities, then softmax. This
-is implemented as `_distance_to_similarity` in [model.py](model.py#L75-L78).
+is implemented as `_distance_to_similarity` in [model.py](model.py#L113-L115).
 
 ---
 
@@ -97,7 +97,7 @@ Reading the two nested `min`s is the whole trick:
 
 - **inner `min`** (over patches) = the distance from a prototype to the *single closest patch*
   in the image — this is exactly `min_distances` returned by `forward` in
-  [model.py](model.py#L80-L82);
+  [model.py](model.py#L123-L126);
 - **outer `min`** (over prototypes) = pick the *single closest prototype* (own-class for
   Clst, other-class for Sep).
 
@@ -115,8 +115,8 @@ the separation cost is *new to this work* — earlier prototype methods used onl
 cluster-style term.)
 
 > Both terms are computed in `cluster_and_separation_costs`
-> ([model.py](model.py#L85-L89)) from `min_distances` and the `prototype_class` buffer
-> ([model.py](model.py#L54-L59)), which records which class each prototype belongs to.
+> ([model.py](model.py#L138-L154)) from `min_distances` and the `prototype_class` buffer
+> ([model.py](model.py#L77-L82)), which records which class each prototype belongs to.
 
 **Why freeze $h$, and how it is initialized.** In stage 1 the last layer is held at a
 hand-set value. For a $\text{class-}k$ logit:
@@ -186,10 +186,10 @@ of the now-fixed similarities; cross-entropy of a linear model plus an L1 term i
 program in $w_h$. This stage improves accuracy **without disturbing the latent space or the
 (now visualizable) prototypes**.
 
-> **POC mapping.** Stage 1 ⇒ the loss in [model.py](model.py#L85-L89) + the SGD loop in
-> [train.py](train.py). Stage 2 ⇒ [push.py](push.py). Stage 3 ⇒ a last-layer-only optimizer
-> pass with L1 on cross-class weights. See the alternating-schedule TODO in
-> [notes.md](notes.md).
+> **POC mapping.** Stage 1 ⇒ the loss in [model.py](model.py#L138-L154) + the SGD loop in
+> [train.py](train.py) (`run_training`'s warm/joint phases). Stage 2 ⇒ [push.py](push.py).
+> Stage 3 ⇒ the last-layer-only optimizer pass (`set_mode("last")`) with L1 on cross-class
+> weights in [model.py](model.py#L156-L162). See [notes.md](notes.md) for the schedule.
 
 ---
 
