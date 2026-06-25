@@ -39,8 +39,7 @@ The **similarity / activation** a prototype unit produces is (note: *monotonical
 decreasing* in the distance):
 
 $$
-g_{\mathbf p_j}(\mathbf z)\;=\;\max_{\tilde{\mathbf z}\in\text{patches}(\mathbf z)}
-\log\!\left(\frac{\lVert\tilde{\mathbf z}-\mathbf p_j\rVert_2^2+1}{\lVert\tilde{\mathbf z}-\mathbf p_j\rVert_2^2+\epsilon}\right).
+g_{\mathbf p_j}(\mathbf z) = \max_{\tilde{\mathbf z}\in\text{patches}(\mathbf z)} \log\!\left(\frac{\lVert\tilde{\mathbf z}-\mathbf p_j\rVert_2^2+1}{\lVert\tilde{\mathbf z}-\mathbf p_j\rVert_2^2+\epsilon}\right).
 $$
 
 Small distance ⇒ large similarity. The `max` over patches answers "*is this prototypical
@@ -81,25 +80,17 @@ by SGD, **holding the last layer $w_h$ fixed**.
 With training set $D=\{(\mathbf x_i,y_i)\}_{i=1}^n$, the objective is:
 
 $$
-\min_{\mathbf P,\,w_{\text{conv}}}\;
-\frac1n\sum_{i=1}^n \mathrm{CrsEnt}\big(h\circ g_{\mathbf p}\circ f(\mathbf x_i),\,y_i\big)
-\;+\;\lambda_1\,\mathrm{Clst}\;+\;\lambda_2\,\mathrm{Sep},
+\min_{\mathbf P,\,w_{\text{conv}}} \frac1n\sum_{i=1}^n \mathrm{CrsEnt}\big(h\circ g_{\mathbf p}\circ f(\mathbf x_i),\,y_i\big) + \lambda_1\,\mathrm{Clst} + \lambda_2\,\mathrm{Sep},
 $$
 
 where the two structure terms are
 
 $$
-\mathrm{Clst}=\frac1n\sum_{i=1}^n
-\;\underbrace{\min_{j:\,\mathbf p_j\in\mathbf P_{y_i}}}_{\text{nearest own-class prototype}}\;
-\underbrace{\min_{\mathbf z\in\text{patches}(f(\mathbf x_i))}}_{\text{nearest patch to it}}
-\lVert \mathbf z-\mathbf p_j\rVert_2^2,
+\mathrm{Clst}=\frac1n\sum_{i=1}^n \underbrace{\min_{j:\,\mathbf p_j\in\mathbf P_{y_i}}}_{\text{nearest own-class prototype}} \underbrace{\min_{\mathbf z\in\text{patches}(f(\mathbf x_i))}}_{\text{nearest patch to it}} \lVert \mathbf z-\mathbf p_j\rVert_2^2,
 $$
 
 $$
-\mathrm{Sep}=-\,\frac1n\sum_{i=1}^n
-\;\underbrace{\min_{j:\,\mathbf p_j\notin\mathbf P_{y_i}}}_{\text{nearest other-class prototype}}\;
-\min_{\mathbf z\in\text{patches}(f(\mathbf x_i))}
-\lVert \mathbf z-\mathbf p_j\rVert_2^2 .
+\mathrm{Sep}=-\,\frac1n\sum_{i=1}^n \underbrace{\min_{j:\,\mathbf p_j\notin\mathbf P_{y_i}}}_{\text{nearest other-class prototype}} \min_{\mathbf z\in\text{patches}(f(\mathbf x_i))} \lVert \mathbf z-\mathbf p_j\rVert_2^2 .
 $$
 
 Reading the two nested `min`s is the whole trick:
@@ -131,10 +122,7 @@ cluster-style term.)
 hand-set value. For a class-$k$ logit:
 
 $$
-w_h^{(k,j)} = \begin{cases}
-+1 & \text{if } \mathbf p_j\in\mathbf P_k \quad(\text{own-class connection})\\
--0.5 & \text{if } \mathbf p_j\notin\mathbf P_k \quad(\text{cross-class connection})
-\end{cases}
+w_h^{(k,j)} = \begin{cases} +1 & \text{if } \mathbf p_j\in\mathbf P_k \quad(\text{own-class connection}) \\ -0.5 & \text{if } \mathbf p_j\notin\mathbf P_k \quad(\text{cross-class connection}) \end{cases}
 $$
 
 Intuition: a **positive** own-class connection means "this image looking like a class-$k$
@@ -158,9 +146,7 @@ a prototype as an image region, we **snap** each $\mathbf p_j$ (of class $k$) on
 **nearest latent patch from a training image of the same class $k$**:
 
 $$
-\mathbf p_j \leftarrow \arg\min_{\mathbf z\in\mathcal Z_j}\lVert \mathbf z-\mathbf p_j\rVert_2,
-\qquad
-\mathcal Z_j=\{\tilde{\mathbf z}:\tilde{\mathbf z}\in\text{patches}(f(\mathbf x_i))\;\forall i\text{ s.t. } y_i=k\}.
+\mathbf p_j \leftarrow \arg\min_{\mathbf z\in\mathcal Z_j}\lVert \mathbf z-\mathbf p_j\rVert_2, \qquad \mathcal Z_j=\{\tilde{\mathbf z}:\tilde{\mathbf z}\in\text{patches}(f(\mathbf x_i))\ \forall i\text{ s.t. } y_i=k\}.
 $$
 
 After this update **every prototype literally *is* a patch of a real training image**, so it
@@ -186,8 +172,7 @@ Two practical notes from the paper:
 are driven toward $0$:
 
 $$
-\min_{w_h}\;\frac1n\sum_{i=1}^n \mathrm{CrsEnt}\big(h\circ g_{\mathbf p}\circ f(\mathbf x_i),\,y_i\big)
-\;+\;\lambda\sum_{k=1}^{K}\sum_{j:\,\mathbf p_j\notin\mathbf P_k}\big|w_h^{(k,j)}\big|.
+\min_{w_h} \frac1n\sum_{i=1}^n \mathrm{CrsEnt}\big(h\circ g_{\mathbf p}\circ f(\mathbf x_i),\,y_i\big) + \lambda\sum_{k=1}^{K}\sum_{j:\,\mathbf p_j\notin\mathbf P_k}\big|w_h^{(k,j)}\big|.
 $$
 
 The L1 penalty applies **only to cross-class weights** (own-class connections are left
@@ -237,7 +222,7 @@ $\mathbf x$ with correct label $c$:
 - **(A2)** there is a $\delta\in(0,1)$ such that:
   - **(A2a, wrong-class prototypes $k\neq c$):**
     $\lVert\mathbf a_l^{k}-\mathbf b_l^{k}\rVert_2\le\theta\,\lVert\mathbf z_l^{k}-\mathbf b_l^{k}\rVert_2-\sqrt\epsilon$,
-    with $\theta=\min\!\big(\sqrt{1+\delta}-1,\;1-\tfrac{1}{\sqrt{2-\delta}}\big)$.
+    with $\theta=\min\!\big(\sqrt{1+\delta}-1,\ 1-\tfrac{1}{\sqrt{2-\delta}}\big)$.
     *"A prototype moves only a little relative to how far it already was from the image's
     nearest patch."* (The `min` makes the single $\theta$ tight enough for **both** factors
     of the bound below.)
@@ -256,17 +241,14 @@ Because cross-class weights are $0$, the class-$k$ logit is just the **sum of it
 prototypes' activations**:
 
 $$
-L_k\big(\mathbf x,\{\mathbf p_l^{k}\}\big)
-=\sum_{l=1}^{m'}\log\!\left(\frac{\lVert\mathbf z_l^{k}-\mathbf p_l^{k}\rVert_2^2+1}{\lVert\mathbf z_l^{k}-\mathbf p_l^{k}\rVert_2^2+\epsilon}\right).
+L_k\big(\mathbf x,\{\mathbf p_l^{k}\}\big) = \sum_{l=1}^{m'}\log\!\left(\frac{\lVert\mathbf z_l^{k}-\mathbf p_l^{k}\rVert_2^2+1}{\lVert\mathbf z_l^{k}-\mathbf p_l^{k}\rVert_2^2+\epsilon}\right).
 $$
 
 Define the **per-prototype multiplicative change** of the logit caused by projection
 ($\mathbf b\to\mathbf a$):
 
 $$
-\Delta_k=L_k(\mathbf x,\{\mathbf a_l^{k}\})-L_k(\mathbf x,\{\mathbf b_l^{k}\})=\sum_{l=1}^{m'}\log\Psi_l^{k},
-\qquad
-\Psi_l^{k}=\frac{\lVert\mathbf z_l^{k}-\mathbf a_l^{k}\rVert_2^2+1}{\lVert\mathbf z_l^{k}-\mathbf b_l^{k}\rVert_2^2+1}\cdot\frac{\lVert\mathbf z_l^{k}-\mathbf b_l^{k}\rVert_2^2+\epsilon}{\lVert\mathbf z_l^{k}-\mathbf a_l^{k}\rVert_2^2+\epsilon}.
+\Delta_k=L_k(\mathbf x,\{\mathbf a_l^{k}\})-L_k(\mathbf x,\{\mathbf b_l^{k}\})=\sum_{l=1}^{m'}\log\Psi_l^{k}, \qquad \Psi_l^{k}=\frac{\lVert\mathbf z_l^{k}-\mathbf a_l^{k}\rVert_2^2+1}{\lVert\mathbf z_l^{k}-\mathbf b_l^{k}\rVert_2^2+1}\cdot\frac{\lVert\mathbf z_l^{k}-\mathbf b_l^{k}\rVert_2^2+\epsilon}{\lVert\mathbf z_l^{k}-\mathbf a_l^{k}\rVert_2^2+\epsilon}.
 $$
 
 So the whole proof reduces to **bounding the single ratio $\Psi_l^{k}$** — from *below* for
@@ -280,7 +262,7 @@ Write $z,a,b$ for $\mathbf z_l^{c},\mathbf a_l^{c},\mathbf b_l^{c}$. Bound the t
 **Factor 1** — use the second part of (A2b), $\lVert z-b\rVert_2^2\le 1-\delta$:
 
 $$
-\frac{\lVert z-a\rVert^2+1}{\lVert z-b\rVert^2+1}\;\ge\;\frac{1}{\lVert z-b\rVert^2+1}\;\ge\;\frac{1}{2-\delta}.\tag{1}
+\frac{\lVert z-a\rVert^2+1}{\lVert z-b\rVert^2+1} \ge \frac{1}{\lVert z-b\rVert^2+1} \ge \frac{1}{2-\delta}. \tag{1}
 $$
 
 **Factor 2** — triangle inequality $\lVert z-a\rVert\le\lVert z-b\rVert+\lVert a-b\rVert$, then
@@ -289,18 +271,14 @@ $\lVert z-a\rVert\le\sqrt{1+\delta}\,\lVert z-b\rVert$, i.e. $\lVert z-a\rVert^2
 Since also $\epsilon\le(1+\delta)\epsilon$,
 
 $$
-\lVert z-a\rVert^2+\epsilon\le(1+\delta)(\lVert z-b\rVert^2+\epsilon)
-\;\Longrightarrow\;
-\frac{\lVert z-b\rVert^2+\epsilon}{\lVert z-a\rVert^2+\epsilon}\ge\frac{1}{1+\delta}.\tag{2}
+\lVert z-a\rVert^2+\epsilon\le(1+\delta)(\lVert z-b\rVert^2+\epsilon) \implies \frac{\lVert z-b\rVert^2+\epsilon}{\lVert z-a\rVert^2+\epsilon}\ge\frac{1}{1+\delta}. \tag{2}
 $$
 
 Multiplying (1)·(2): $\Psi_l^{c}\ge\frac{1}{(1+\delta)(2-\delta)}$. Summing the logs over the
 $m'$ correct-class prototypes:
 
 $$
-\Delta_c=\sum_{l}\log\Psi_l^{c}\ge m'\log\frac{1}{(1+\delta)(2-\delta)}
-\quad\Longleftrightarrow\quad
--\Delta_c\le \underbrace{m'\log\big((1+\delta)(2-\delta)\big)}_{=\,\Delta_{\max}}.
+\Delta_c=\sum_{l}\log\Psi_l^{c}\ge m'\log\frac{1}{(1+\delta)(2-\delta)} \quad\Longleftrightarrow\quad -\Delta_c\le \underbrace{m'\log\big((1+\delta)(2-\delta)\big)}_{=\,\Delta_{\max}}.
 $$
 
 **The correct-class logit can drop by at most $\Delta_{\max}$.**
@@ -314,9 +292,7 @@ using **(A2a)**.
 give $\lVert z-a\rVert^2\le(1+\delta)\lVert z-b\rVert^2$, hence
 
 $$
-\frac{\lVert z-a\rVert^2+1}{\lVert z-b\rVert^2+1}
-\le\frac{(1+\delta)\lVert z-b\rVert^2+1}{\lVert z-b\rVert^2+1}
-\le\frac{(1+\delta)\lVert z-b\rVert^2+(1+\delta)}{\lVert z-b\rVert^2+1}=1+\delta.\tag{3}
+\frac{\lVert z-a\rVert^2+1}{\lVert z-b\rVert^2+1} \le \frac{(1+\delta)\lVert z-b\rVert^2+1}{\lVert z-b\rVert^2+1} \le \frac{(1+\delta)\lVert z-b\rVert^2+(1+\delta)}{\lVert z-b\rVert^2+1}=1+\delta. \tag{3}
 $$
 
 **Factor 2 $\le 2-\delta$.** Reverse triangle inequality $\lVert z-a\rVert\ge\lVert z-b\rVert-\lVert a-b\rVert>0$
@@ -324,7 +300,7 @@ $$
 branch of (A2a) and the $\sqrt\epsilon$ slack, yields
 
 $$
-\frac{\lVert z-b\rVert^2+\epsilon}{\lVert z-a\rVert^2+\epsilon}\le 2-\delta.\tag{7}
+\frac{\lVert z-b\rVert^2+\epsilon}{\lVert z-a\rVert^2+\epsilon}\le 2-\delta. \tag{7}
 $$
 
 (Inequalities (3) and (7) keep the paper's numbering; the in-between algebra is routine
@@ -348,10 +324,7 @@ $$
 Then, chaining "correct drops $\le\Delta_{\max}$" with "wrong rises $\le\Delta_{\max}$":
 
 $$
-L_c(\mathbf x,\{\mathbf a_l^{c}\})
-\;\ge\;L_c(\mathbf x,\{\mathbf b_l^{c}\})-\Delta_{\max}
-\;\ge\;L_k(\mathbf x,\{\mathbf b_l^{k}\})+\Delta_{\max}
-\;\ge\;L_k(\mathbf x,\{\mathbf a_l^{k}\}).
+\begin{aligned} L_c(\mathbf x,\{\mathbf a_l^{c}\}) &\ge L_c(\mathbf x,\{\mathbf b_l^{c}\})-\Delta_{\max} \\ &\ge L_k(\mathbf x,\{\mathbf b_l^{k}\})+\Delta_{\max} \\ &\ge L_k(\mathbf x,\{\mathbf a_l^{k}\}). \end{aligned}
 $$
 
 So after projection class $c$ still wins. **Projection does not change the prediction.** ∎
@@ -408,7 +381,7 @@ Define, for each prototype $\mathbf p_l^{k}$, the function returning the image's
 latent patch** to it:
 
 $$
-f_l^{k}(\mathbf x):=\arg\min_{\mathbf z\in\text{patches}(f(\mathbf x))}\lVert\mathbf z-\mathbf p_l^{k}\rVert_2\;\in\;\Omega.
+f_l^{k}(\mathbf x):=\arg\min_{\mathbf z\in\text{patches}(f(\mathbf x))}\lVert\mathbf z-\mathbf p_l^{k}\rVert_2 \ \in\ \Omega.
 $$
 
 Assuming a unique closest patch, $f_l^{k}(\mathbf X)$ (a function of the random image
@@ -421,18 +394,14 @@ $f_l^{k}$ is well-defined.
 Knowing $\mathbf X=\mathbf x$ determines every $f_l^{k}(\mathbf x)$ with probability 1, so
 
 $$
-P(\mathbf X=\mathbf x\mid Y=k)=
-\underbrace{P\big(\mathbf X=\mathbf x\;\big|\;f_1^{k}(\mathbf X)=f_1^{k}(\mathbf x),\dots,Y=k\big)}_{\text{image-space term}}
-\cdot
-\underbrace{P\big(f_1^{k}(\mathbf X)=f_1^{k}(\mathbf x),\dots\mid Y=k\big)}_{\text{latent-space term}}.
+P(\mathbf X=\mathbf x\mid Y=k)= \underbrace{P\big(\mathbf X=\mathbf x \mid f_1^{k}(\mathbf X)=f_1^{k}(\mathbf x),\dots,Y=k\big)}_{\text{image-space term}} \cdot \underbrace{P\big(f_1^{k}(\mathbf X)=f_1^{k}(\mathbf x),\dots\mid Y=k\big)}_{\text{latent-space term}}.
 $$
 
 **Assumption (i).** For *every* image $\mathbf x$ and *any* two classes $a,b$, the
 image-space term is the same:
 
 $$
-P\big(\mathbf X=\mathbf x\mid f_1^{a}(\mathbf X)=f_1^{a}(\mathbf x),\dots,Y=a\big)
-=P\big(\mathbf X=\mathbf x\mid f_1^{b}(\mathbf X)=f_1^{b}(\mathbf x),\dots,Y=b\big).
+P\big(\mathbf X=\mathbf x\mid f_1^{a}(\mathbf X)=f_1^{a}(\mathbf x),\dots,Y=a\big) = P\big(\mathbf X=\mathbf x\mid f_1^{b}(\mathbf X)=f_1^{b}(\mathbf x),\dots,Y=b\big).
 $$
 
 In words: *knowing an image's closest patches to a class's prototypes (plus that the image
@@ -445,7 +414,7 @@ label adds nothing.)
 After (i), the posterior depends **only on the latent-space term**:
 
 $$
-P(Y=k\mid\mathbf X=\mathbf x)\;\propto\;P\big(f_1^{k}(\mathbf X)=f_1^{k}(\mathbf x),\dots,f_{m_k}^{k}(\mathbf X)=f_{m_k}^{k}(\mathbf x)\mid Y=k\big)\,P(Y=k).
+P(Y=k\mid\mathbf X=\mathbf x) \propto P\big(f_1^{k}(\mathbf X)=f_1^{k}(\mathbf x),\dots,f_{m_k}^{k}(\mathbf X)=f_{m_k}^{k}(\mathbf x)\mid Y=k\big)\,P(Y=k).
 $$
 
 The density estimation now lives in $\Omega^{m_k}$ instead of $\mathcal X$ — exactly the
@@ -464,7 +433,7 @@ $$
 subspace of actually-attained closest-patch tuples.) Now the posterior is a clean product:
 
 $$
-P(Y=k\mid\mathbf X=\mathbf x)\;\propto\;\Big[\prod_{l=1}^{m_k}P\big(f_l^{k}(\mathbf X)=f_l^{k}(\mathbf x)\mid Y=k\big)\Big]\,P(Y=k).
+P(Y=k\mid\mathbf X=\mathbf x) \propto \Big[\prod_{l=1}^{m_k}P\big(f_l^{k}(\mathbf X)=f_l^{k}(\mathbf x)\mid Y=k\big)\Big]\,P(Y=k).
 $$
 
 ### 3.5 Choose the per-prototype density to encode case-based reasoning
@@ -482,7 +451,7 @@ exactly at the prototype $\mathbf p_l^{k}$** — the prototype *is* the most lik
 patch for that class. Substituting (eq. 10 in the supplement):
 
 $$
-P(Y=k\mid\mathbf X=\mathbf x)=\frac{\big[\prod_{l=1}^{m_k}d_l^{k}(\lVert f_l^{k}(\mathbf x)-\mathbf p_l^{k}\rVert_2)\big]\,P(Y=k)}{\sum_{c=1}^K\big[\prod_{l=1}^{m_c}d_l^{c}(\lVert f_l^{c}(\mathbf x)-\mathbf p_l^{c}\rVert_2)\big]\,P(Y=c)}.\tag{10}
+P(Y=k\mid\mathbf X=\mathbf x)=\frac{\big[\prod_{l=1}^{m_k}d_l^{k}(\lVert f_l^{k}(\mathbf x)-\mathbf p_l^{k}\rVert_2)\big]\,P(Y=k)}{\sum_{c=1}^K\big[\prod_{l=1}^{m_c}d_l^{c}(\lVert f_l^{c}(\mathbf x)-\mathbf p_l^{c}\rVert_2)\big]\,P(Y=c)}. \tag{10}
 $$
 
 ### 3.6 ProtoPNet's actual softmax *is* equation (10)
@@ -498,7 +467,7 @@ $$
 which simplifies (turn $\exp\sum\log$ into a product) to (eq. 11):
 
 $$
-P(Y=k\mid\mathbf X=\mathbf x)=\frac{\prod_{l=1}^{m_k}\dfrac{\lVert f_l^{k}(\mathbf x)-\mathbf p_l^{k}\rVert_2^2+1}{\lVert f_l^{k}(\mathbf x)-\mathbf p_l^{k}\rVert_2^2+\epsilon}}{\sum_{c=1}^K\prod_{l=1}^{m_c}\dfrac{\lVert f_l^{c}(\mathbf x)-\mathbf p_l^{c}\rVert_2^2+1}{\lVert f_l^{c}(\mathbf x)-\mathbf p_l^{c}\rVert_2^2+\epsilon}}.\tag{11}
+P(Y=k\mid\mathbf X=\mathbf x)=\frac{\prod_{l=1}^{m_k}\dfrac{\lVert f_l^{k}(\mathbf x)-\mathbf p_l^{k}\rVert_2^2+1}{\lVert f_l^{k}(\mathbf x)-\mathbf p_l^{k}\rVert_2^2+\epsilon}}{\sum_{c=1}^K\prod_{l=1}^{m_c}\dfrac{\lVert f_l^{c}(\mathbf x)-\mathbf p_l^{c}\rVert_2^2+1}{\lVert f_l^{c}(\mathbf x)-\mathbf p_l^{c}\rVert_2^2+\epsilon}}. \tag{11}
 $$
 
 **Comparing (10) and (11)**, ProtoPNet is the special case where:
