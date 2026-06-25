@@ -177,3 +177,33 @@ class ProtoPNet(nn.Module):
         self.prototypes.requires_grad = mode in {"warm", "joint"}
         for p in self.classifier.parameters():
             p.requires_grad = mode == "last"
+
+    def train(self, mode: bool = True):
+        """Standard ``train()`` / ``eval()`` — but any frozen BatchNorm *inside the backbone*
+        is forced back to eval so it keeps its pretrained running stats and stops updating
+        ``running_mean`` / ``running_var``.
+
+        Why this is needed: ``requires_grad=False`` freezes a BN layer's affine params
+        (gamma/beta) but does NOT stop its running-stat *buffers* from updating — those
+        follow the module's train/eval state, not ``requires_grad``. So a "frozen" backbone
+        left in ``train()`` would keep overwriting its pretrained stats with tiny-subset
+        stats (and normalize with batch stats). We re-derive each backbone BN's mode from
+        its own ``requires_grad`` after the standard ``train()`` call:
+
+        * **scoped to** ``self.backbone`` — BN anywhere else (e.g. a future *trainable*
+          add-on BN) is never touched;
+        * **per-BN**, so *partial* freezing works — only frozen blocks' BN go to eval,
+          trainable blocks' BN stay in train.
+
+        (A BN with ``affine=False`` exposes no param to read a freeze signal from, so it is
+        left in whatever mode the standard ``train()`` set — a rare case, absent from the
+        torchvision backbones used here.)
+        """
+        super().train(mode)
+        if mode:  # eval() already puts everything in eval; nothing to re-assert
+            for m in self.backbone.modules():
+                if isinstance(m, nn.modules.batchnorm._BatchNorm):
+                    affine_params = list(m.parameters(recurse=False))
+                    if affine_params and not any(p.requires_grad for p in affine_params):
+                        m.eval()
+        return self
