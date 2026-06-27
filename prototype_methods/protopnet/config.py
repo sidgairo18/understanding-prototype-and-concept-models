@@ -44,3 +44,6 @@ class ProtoPNetConfig:
     seed: int = 0
     device: str = "cuda"              # falls back to cpu in train.py if unavailable
     out_dir: str = "prototype_methods/protopnet/runs"
+
+    # --- distributed (only used when launched via torchrun; see common/distributed.py) ---
+    sync_batchnorm: bool = False      # convert backbone BN -> SyncBatchNorm (CUDA+DDP only)

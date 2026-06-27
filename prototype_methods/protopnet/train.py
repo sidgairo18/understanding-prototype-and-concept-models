@@ -21,9 +21,11 @@ from __future__ import annotations
 import os
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, DistributedSampler
 
+from common import distributed as dist_utils
 from common.data.cub import CUB200, build_transforms
 from .config import ProtoPNetConfig
 from .model import ProtoPNet
@@ -31,16 +33,21 @@ from .push import push_prototypes
 
 
 # ---------------------------------------------------------------------------- loss / steps
-def compute_loss(model: ProtoPNet, logits, min_distances, labels, cfg: ProtoPNetConfig):
+def compute_loss(core: ProtoPNet, logits, min_distances, labels, cfg: ProtoPNetConfig):
     """Cross-entropy + cluster + (−)separation + L1, the full ProtoPNet objective.
 
     Separation enters with a *minus* sign: minimizing the loss pushes each image *away*
     from other-class prototypes. The cluster/separation terms are constant w.r.t. the last
     layer, so the same objective is reused during the last-layer-only phase.
+
+    Takes the *unwrapped* model (``core``): the custom cost methods live on ProtoPNet, not
+    on the DDP wrapper. Every parameter these terms touch (prototypes via ``min_distances``,
+    classifier via ``logits``) is reachable from the DDP forward outputs, so DDP reduces
+    their gradients correctly.
     """
     ce = F.cross_entropy(logits, labels)
-    cluster, separation = model.cluster_and_separation_costs(min_distances, labels)
-    l1 = model.last_layer_l1()
+    cluster, separation = core.cluster_and_separation_costs(min_distances, labels)
+    l1 = core.last_layer_l1()
     loss = (
         ce
         + cfg.lambda_cluster * cluster
@@ -57,32 +64,50 @@ def compute_loss(model: ProtoPNet, logits, min_distances, labels, cfg: ProtoPNet
     return loss, stats
 
 
+def _global_means(totals: dict, n: int, cfg) -> dict:
+    """Average per-sample stats across *all* ranks (so rank-0's log is the global mean).
+
+    Packs the running sums + sample count into one tensor and does a single all-reduce.
+    No-op arithmetic when not distributed.
+    """
+    keys = list(totals.keys())
+    packed = torch.tensor([totals[k] for k in keys] + [float(n)], device=cfg.device)
+    dist_utils.all_reduce_sum(packed)
+    denom = max(packed[-1].item(), 1.0)
+    return {k: packed[i].item() / denom for i, k in enumerate(keys)}
+
+
 def train_one_epoch(model, loader, optimizer, cfg) -> dict:
-    model.train()
+    model.train()                                   # DDP recurses -> ProtoPNet.train() (frozen-BN guard)
+    core = dist_utils.unwrap_model(model)
     totals, n = {}, 0
     for images, labels in loader:
         images, labels = images.to(cfg.device), labels.to(cfg.device)
-        logits, min_distances = model(images)
-        loss, stats = compute_loss(model, logits, min_distances, labels, cfg)
+        logits, min_distances = model(images)       # through DDP -> gradients are all-reduced
+        loss, stats = compute_loss(core, logits, min_distances, labels, cfg)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         for k, v in stats.items():
             totals[k] = totals.get(k, 0.0) + v * images.size(0)
         n += images.size(0)
-    return {k: v / max(n, 1) for k, v in totals.items()}
+    return _global_means(totals, n, cfg)
 
 
 @torch.no_grad()
 def evaluate(model, loader, cfg) -> float:
     model.eval()
-    correct, total = 0, 0
+    correct = torch.zeros((), device=cfg.device)
+    total = torch.zeros((), device=cfg.device)
     for images, labels in loader:
         images, labels = images.to(cfg.device), labels.to(cfg.device)
         logits, _ = model(images)
-        correct += int((logits.argmax(1) == labels).sum())
+        correct += (logits.argmax(1) == labels).sum()
         total += labels.size(0)
-    return correct / max(total, 1)
+    # Sum local shard counts into a global accuracy (no-op when single-process).
+    dist_utils.all_reduce_sum(correct)
+    dist_utils.all_reduce_sum(total)
+    return float(correct.item() / max(total.item(), 1.0))
 
 
 # ---------------------------------------------------------------------------- schedule
@@ -95,61 +120,95 @@ def should_push(epoch: int, cfg: ProtoPNetConfig) -> bool:
     return (epoch - cfg.warm_epochs) % cfg.push_every == 0
 
 
-def _build_optimizers(model: ProtoPNet, cfg: ProtoPNetConfig):
+def _build_optimizers(core: ProtoPNet, cfg: ProtoPNetConfig):
     warm = torch.optim.Adam(
-        [{"params": model.add_on.parameters()}, {"params": [model.prototypes]}], lr=cfg.lr
+        [{"params": core.add_on.parameters()}, {"params": [core.prototypes]}], lr=cfg.lr
     )
     joint = torch.optim.Adam(
         [
-            {"params": model.backbone.parameters(), "lr": cfg.lr * 0.1},
-            {"params": model.add_on.parameters()},
-            {"params": [model.prototypes]},
+            {"params": core.backbone.parameters(), "lr": cfg.lr * 0.1},
+            {"params": core.add_on.parameters()},
+            {"params": [core.prototypes]},
         ],
         lr=cfg.lr,
     )
-    last = torch.optim.Adam(model.classifier.parameters(), lr=cfg.lr * 0.1)
+    last = torch.optim.Adam(core.classifier.parameters(), lr=cfg.lr * 0.1)
     return warm, joint, last
 
 
-def run_training(cfg, model, train_loader, test_loader, push_loader) -> list:
-    """Run the full alternating schedule. Returns the metadata from the final push."""
-    warm_opt, joint_opt, last_opt = _build_optimizers(model, cfg)
-    push_meta: list = [None] * model.num_prototypes
+def _distributed_push(core, push_loader, cfg):
+    """Push under DDP: run the projection on rank 0 only (it owns the full, un-sharded push
+    loader), then **broadcast** the updated prototypes to every rank so all replicas stay
+    bit-identical. The push metadata is only needed on rank 0 (for visualization).
+
+    Rationale: the push mutates ``prototypes`` *outside* the optimizer, so DDP's gradient
+    sync can't keep it consistent — an explicit broadcast does. Doing the scan on one rank
+    avoids redundant work; the broadcast is cheap (a handful of vectors). A fully sharded
+    distributed-argmin push is a possible future optimization (see notes.md).
+    """
+    push_meta = [None] * core.num_prototypes
+    if dist_utils.is_main_process():
+        push_meta = push_prototypes(core, push_loader, cfg.device)
+    dist_utils.barrier()
+    dist_utils.broadcast(core.prototypes.data, src=0)   # sync prototypes to all ranks
+    return push_meta
+
+
+def run_training(cfg, model, train_loader, test_loader, push_loader, train_sampler=None) -> list:
+    """Run the full alternating schedule. Returns the metadata from the final push.
+
+    ``model`` may be a DDP wrapper; ``core`` is always the underlying ProtoPNet for the
+    custom methods (``set_mode``, ``num_prototypes``, push). Only rank 0 logs.
+    """
+    core = dist_utils.unwrap_model(model)
+    main = dist_utils.is_main_process()
+    warm_opt, joint_opt, last_opt = _build_optimizers(core, cfg)
+    push_meta: list = [None] * core.num_prototypes
 
     for epoch in range(cfg.epochs):
+        if train_sampler is not None:
+            train_sampler.set_epoch(epoch)          # reshuffle shards each epoch (DDP)
+
         if epoch < cfg.warm_epochs:
-            model.set_mode("warm")
+            core.set_mode("warm")
             stats = train_one_epoch(model, train_loader, warm_opt, cfg)
             phase = "warm"
         else:
-            model.set_mode("joint")
+            core.set_mode("joint")
             stats = train_one_epoch(model, train_loader, joint_opt, cfg)
             phase = "joint"
 
         acc = evaluate(model, test_loader, cfg)
-        print(f"[epoch {epoch:02d}] {phase:5s} loss={stats['loss']:.3f} "
-              f"ce={stats['ce']:.3f} clst={stats['cluster']:.3f} sep={stats['sep']:.3f} "
-              f"| test_acc={acc:.3f}")
+        if main:
+            print(f"[epoch {epoch:02d}] {phase:5s} loss={stats['loss']:.3f} "
+                  f"ce={stats['ce']:.3f} clst={stats['cluster']:.3f} sep={stats['sep']:.3f} "
+                  f"| test_acc={acc:.3f}")
 
         if should_push(epoch, cfg):
-            push_meta = push_prototypes(model, push_loader, cfg.device)
+            push_meta = _distributed_push(core, push_loader, cfg)
             acc_after = evaluate(model, test_loader, cfg)
-            print(f"           push -> test_acc={acc_after:.3f}; optimizing last layer...")
-            model.set_mode("last")
+            if main:
+                print(f"           push -> test_acc={acc_after:.3f}; optimizing last layer...")
+            core.set_mode("last")
             for _ in range(cfg.last_layer_iters):
                 train_one_epoch(model, train_loader, last_opt, cfg)
-            print(f"           last-layer done -> test_acc={evaluate(model, test_loader, cfg):.3f}")
+            if main:
+                print(f"           last-layer done -> test_acc={evaluate(model, test_loader, cfg):.3f}")
 
     return push_meta
 
 
 # ---------------------------------------------------------------------------- data
-def build_dataloaders(cfg: ProtoPNetConfig):
+def build_dataloaders(cfg: ProtoPNetConfig, ctx: dist_utils.DistContext | None = None):
     """CUB train/test loaders plus a clean (un-shuffled, un-augmented) push loader.
 
-    The push loader shares index order with `push_set`, so push metadata indexes back into
-    real training images for visualization.
+    Under DDP the train/test sets are sharded with ``DistributedSampler`` (the returned
+    ``train_sampler`` gets ``set_epoch`` each epoch). The **push loader is never sharded** —
+    the push runs on rank 0 over the full set (see ``_distributed_push``), and its index
+    order matches ``push_set`` so push metadata maps back to real images for visualization.
     """
+    distributed = ctx is not None and ctx.distributed
+
     train_set = CUB200(
         data_root=cfg.data_root, train=True, num_classes=cfg.num_classes,
         images_per_class=cfg.images_per_class,
@@ -164,13 +223,23 @@ def build_dataloaders(cfg: ProtoPNetConfig):
         images_per_class=cfg.images_per_class,
         transform=build_transforms(cfg.img_size, train=False),
     )
-    train_loader = DataLoader(train_set, batch_size=cfg.batch_size, shuffle=True,
-                              num_workers=cfg.num_workers)
-    test_loader = DataLoader(test_set, batch_size=cfg.batch_size, shuffle=False,
-                             num_workers=cfg.num_workers)
+
+    if distributed:
+        train_sampler = DistributedSampler(train_set, shuffle=True)
+        test_sampler = DistributedSampler(test_set, shuffle=False)
+        train_loader = DataLoader(train_set, batch_size=cfg.batch_size, sampler=train_sampler,
+                                  num_workers=cfg.num_workers)
+        test_loader = DataLoader(test_set, batch_size=cfg.batch_size, sampler=test_sampler,
+                                 num_workers=cfg.num_workers)
+    else:
+        train_sampler = None
+        train_loader = DataLoader(train_set, batch_size=cfg.batch_size, shuffle=True,
+                                  num_workers=cfg.num_workers)
+        test_loader = DataLoader(test_set, batch_size=cfg.batch_size, shuffle=False,
+                                 num_workers=cfg.num_workers)
     push_loader = DataLoader(push_set, batch_size=cfg.batch_size, shuffle=False,
                              num_workers=cfg.num_workers)
-    return train_loader, test_loader, push_loader, test_set, push_set
+    return train_loader, test_loader, push_loader, test_set, push_set, train_sampler
 
 
 # ---------------------------------------------------------------------------- visualization
@@ -239,17 +308,33 @@ def visualize_prototypes(cfg, model, test_set, push_set, push_meta, n_images=4, 
 # ---------------------------------------------------------------------------- entrypoint
 def main(cfg: ProtoPNetConfig | None = None) -> None:
     cfg = cfg or ProtoPNetConfig()
-    cfg.device = cfg.device if torch.cuda.is_available() else "cpu"
-    torch.manual_seed(cfg.seed)
 
-    train_loader, test_loader, push_loader, test_set, push_set = build_dataloaders(cfg)
+    # Single-process by default; engages DDP only under torchrun (WORLD_SIZE > 1).
+    ctx = dist_utils.init_distributed(prefer_device=cfg.device)
+    cfg.device = ctx.device
+    torch.manual_seed(cfg.seed)                     # DDP also broadcasts params at wrap time
+
+    train_loader, test_loader, push_loader, test_set, push_set, train_sampler = \
+        build_dataloaders(cfg, ctx)
+
     model = ProtoPNet(cfg).to(cfg.device)
-    print(f"ProtoPNet: {model.num_prototypes} prototypes "
-          f"({cfg.prototypes_per_class}/class × {cfg.num_classes} classes), device={cfg.device}")
+    if ctx.distributed and cfg.sync_batchnorm and ctx.device.startswith("cuda"):
+        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)   # cross-GPU batch stats in joint phase
+    model = dist_utils.wrap_ddp(model, ctx)
 
-    push_meta = run_training(cfg, model, train_loader, test_loader, push_loader)
-    visualize_prototypes(cfg, model, test_set, push_set, push_meta)
-    print("done.")
+    if dist_utils.is_main_process():
+        core = dist_utils.unwrap_model(model)
+        print(f"ProtoPNet: {core.num_prototypes} prototypes "
+              f"({cfg.prototypes_per_class}/class × {cfg.num_classes} classes), "
+              f"device={cfg.device}, world_size={ctx.world_size}")
+
+    push_meta = run_training(cfg, model, train_loader, test_loader, push_loader, train_sampler)
+
+    if dist_utils.is_main_process():                # visualize once, on rank 0
+        visualize_prototypes(cfg, dist_utils.unwrap_model(model), test_set, push_set, push_meta)
+        print("done.")
+
+    dist_utils.cleanup()
 
 
 if __name__ == "__main__":
