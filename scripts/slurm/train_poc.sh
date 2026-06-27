@@ -10,9 +10,12 @@
 # POC name -> training module. Only ProtoPNet is implemented today; the others are
 # scaffolded and will run via the same launcher once their POC step lands.
 #
-# All submission knobs (PART, GPUS, CPUS, MEM, TIME_LIMIT, ENV_NAME, EXCLUDE, EXTRA)
-# are documented in _sbatch_submit.sh and the README. Default partitions:
-#   gpu16,gpu17,gpu20,gpu22,gpu24
+# All submission knobs (PART, GPUS, CPUS, MEM, TIME_LIMIT, ENV_NAME, EXCLUDE, EXTRA,
+# CHAIN_JOBS, DEPENDENCY) are documented in _sbatch_submit.sh and the README.
+# Default partitions: gpu16,gpu17,gpu20,gpu22,gpu24
+#
+# Job chaining example (4 back-to-back slots; needs train.py resume to continue):
+#   CHAIN_JOBS=4 CUB_ROOT=/data/CUB_200_2011 bash scripts/slurm/train_poc.sh protopnet
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 

@@ -51,6 +51,8 @@ PART=gpu17,gpu20 ... bash scripts/slurm/train_poc.sh protopnet
 | `CONDA_BASE` | miniforge that holds the env | Conda install to source. |
 | `EXCLUDE` | *(unset)* | Comma-separated nodes to exclude; falls back to `bad_nodes.txt`. |
 | `EXTRA` | *(empty)* | Extra args appended to the launch command. |
+| `CHAIN_JOBS` | `1` | Number of sequential job slots (job chaining). `>1` → SLURM array `-a 1-N%1`. |
+| `DEPENDENCY` | *(unset)* | Start only after an existing job, e.g. `afterany:123456`. |
 
 Examples:
 
@@ -63,9 +65,38 @@ GPUS=4 PART=gpu24 TIME_LIMIT=24:00:00 CUB_ROOT=/data/CUB_200_2011 \
 EXCLUDE=gpu24-01 CUB_ROOT=/data/CUB_200_2011 bash scripts/slurm/train_poc.sh protopnet
 ```
 
+## Job chaining
+
+A long run can outlive a single walltime window by chaining several job slots that run
+back-to-back. Set `CHAIN_JOBS=N` to submit a SLURM array `-a 1-N%1` — N tasks throttled
+to **one at a time**, so slot 2 starts when slot 1 ends (walltime, finish, or crash):
+
+```bash
+# 4 sequential 8h slots (32h of wall budget) on the default partitions:
+CHAIN_JOBS=4 CUB_ROOT=/data/CUB_200_2011 bash scripts/slurm/train_poc.sh protopnet
+```
+
+You can also chain onto an *existing* job with `DEPENDENCY` (any sbatch dependency spec):
+
+```bash
+DEPENDENCY=afterany:123456 CUB_ROOT=/data/CUB_200_2011 \
+    bash scripts/slurm/train_poc.sh protopnet
+```
+
+Each slot writes its own log: `runs/slurm_logs/<JN>-<arrayid>_<slot>.out`. Cancel the
+whole chain with `scancel <arrayid>`.
+
+> **⚠️ Requires resume to be useful.** Each slot just re-runs `train.py`. It only
+> *continues* training (instead of restarting from scratch) if `train.py` saves and
+> resumes from a checkpoint — **not wired yet**. Until then, use `CHAIN_JOBS=1` (default)
+> and a `TIME_LIMIT` large enough for the whole run, or ask to have checkpoint save/resume
+> added to `train.py` (rank-0 save of model + optimizers + epoch + prototypes; auto-detect
+> the latest checkpoint on start). With that in place, chaining continues seamlessly.
+
 ## Logs
 
-Stdout/stderr → `runs/slurm_logs/<JN>-<jobid>.out`. The submitter prints the exact
+Stdout/stderr → `runs/slurm_logs/<JN>-<jobid>.out` (single job) or
+`runs/slurm_logs/<JN>-<arrayid>_<slot>.out` (chained). The submitter prints the exact
 `squeue` / `tail -f` commands after submission.
 
 ## Note on hyperparameters
