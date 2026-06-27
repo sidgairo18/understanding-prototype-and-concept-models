@@ -86,12 +86,17 @@ DEPENDENCY=afterany:123456 CUB_ROOT=/data/CUB_200_2011 \
 Each slot writes its own log: `runs/slurm_logs/<JN>-<arrayid>_<slot>.out`. Cancel the
 whole chain with `scancel <arrayid>`.
 
-> **⚠️ Requires resume to be useful.** Each slot just re-runs `train.py`. It only
-> *continues* training (instead of restarting from scratch) if `train.py` saves and
-> resumes from a checkpoint — **not wired yet**. Until then, use `CHAIN_JOBS=1` (default)
-> and a `TIME_LIMIT` large enough for the whole run, or ask to have checkpoint save/resume
-> added to `train.py` (rank-0 save of model + optimizers + epoch + prototypes; auto-detect
-> the latest checkpoint on start). With that in place, chaining continues seamlessly.
+**Resume is wired (ProtoPNet).** For a chained run the launcher auto-appends `--resume`, so
+each slot continues from the previous one's checkpoint instead of restarting. ProtoPNet
+writes a rolling, atomically-written `ckpt_last.pt` (under `out_dir`) at the end of every
+epoch — capturing the model, all three optimizers (warm/joint/last), the joint LR schedule,
+the epoch, the latest push metadata, and RNG state — and resumes from it on the next slot.
+The first slot starts fresh (no checkpoint yet). All chained slots share the same `out_dir`,
+so keep `out_dir` fixed across the chain (the default is per-POC, so this is automatic).
+
+To get the same crash-recovery on a **single** (non-chained) job, add `EXTRA="--resume"`.
+The other POCs (pipnet/scops/pdiscoformer) gain chaining once they implement the same
+`--resume` hook.
 
 ## Logs
 

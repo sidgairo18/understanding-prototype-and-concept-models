@@ -81,12 +81,20 @@ fi
 DEP_LINE=""
 [[ -n "${DEPENDENCY}" ]] && DEP_LINE="#SBATCH --dependency=${DEPENDENCY}"
 
+# Chained slots must resume from the rolling checkpoint to *continue* (not restart). Auto-add
+# --resume for chains: the POC's train.py auto-detects <out_dir>/<ckpt_name>, and it is
+# harmless on the first slot (no checkpoint -> fresh start). Skipped if EXTRA already has it.
+RESUME_FLAG=""
+if [[ "${CHAIN_JOBS}" -gt 1 && "${EXTRA}" != *"--resume"* ]]; then
+    RESUME_FLAG="--resume"
+fi
+
 # Launch command: torchrun (single-node, standalone rendezvous) for multi-GPU DDP,
 # else plain python for one GPU.
 if [[ "${GPUS}" -gt 1 ]]; then
-    LAUNCH="torchrun --standalone --nnodes=1 --nproc_per_node=${GPUS} -m ${MODULE} ${EXTRA}"
+    LAUNCH="torchrun --standalone --nnodes=1 --nproc_per_node=${GPUS} -m ${MODULE} ${EXTRA} ${RESUME_FLAG}"
 else
-    LAUNCH="python -u -m ${MODULE} ${EXTRA}"
+    LAUNCH="python -u -m ${MODULE} ${EXTRA} ${RESUME_FLAG}"
 fi
 
 echo "Submitting '${JN}': module=${MODULE} part=${PART} gpus=${GPUS} time=${TIME_LIMIT} mem=${MEM} chain=${CHAIN_JOBS}"

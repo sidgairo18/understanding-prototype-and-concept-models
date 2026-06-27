@@ -27,6 +27,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 
 from common import distributed as dist_utils
 from common.data.cub import CUB200, build_transforms
+from . import checkpoint
 from .config import ProtoPNetConfig
 from .model import ProtoPNet
 from .push import push_prototypes
@@ -154,18 +155,39 @@ def _distributed_push(core, push_loader, cfg):
     return push_meta
 
 
-def run_training(cfg, model, train_loader, test_loader, push_loader, train_sampler=None) -> list:
+def run_training(cfg, model, train_loader, test_loader, push_loader,
+                 train_sampler=None, ckpt=None) -> list:
     """Run the full alternating schedule. Returns the metadata from the final push.
 
     ``model`` may be a DDP wrapper; ``core`` is always the underlying ProtoPNet for the
-    custom methods (``set_mode``, ``num_prototypes``, push). Only rank 0 logs.
+    custom methods (``set_mode``, ``num_prototypes``, push). Only rank 0 logs and writes
+    checkpoints. If ``ckpt`` is given (from :func:`checkpoint.maybe_load`), the optimizers,
+    LR scheduler, RNG, epoch and push metadata are restored and training continues from the
+    next epoch. A rolling checkpoint is written at the end of every epoch.
     """
     core = dist_utils.unwrap_model(model)
     main = dist_utils.is_main_process()
     warm_opt, joint_opt, last_opt = _build_optimizers(core, cfg)
+    # Joint-phase LR schedule (paper uses StepLR on the joint optimizer). Saved/restored so
+    # decay continues correctly across a resume.
+    joint_sched = torch.optim.lr_scheduler.StepLR(
+        joint_opt, step_size=cfg.lr_step_size, gamma=cfg.lr_gamma)
+    optimizers = {"warm": warm_opt, "joint": joint_opt, "last": last_opt}
     push_meta: list = [None] * core.num_prototypes
 
-    for epoch in range(cfg.epochs):
+    start_epoch = 0
+    if ckpt is not None:
+        start_epoch, restored_meta = checkpoint.restore_train_state(
+            optimizers, joint_sched, ckpt, cfg)
+        if restored_meta is not None:
+            push_meta = restored_meta
+    if start_epoch >= cfg.epochs:
+        if main:
+            print(f"[resume] checkpoint already trained through epoch {start_epoch - 1} "
+                  f">= {cfg.epochs - 1}; nothing to train.")
+        return push_meta
+
+    for epoch in range(start_epoch, cfg.epochs):
         if train_sampler is not None:
             train_sampler.set_epoch(epoch)          # reshuffle shards each epoch (DDP)
 
@@ -176,13 +198,14 @@ def run_training(cfg, model, train_loader, test_loader, push_loader, train_sampl
         else:
             core.set_mode("joint")
             stats = train_one_epoch(model, train_loader, joint_opt, cfg)
+            joint_sched.step()                      # decay joint LR per the schedule
             phase = "joint"
 
         acc = evaluate(model, test_loader, cfg)
         if main:
             print(f"[epoch {epoch:02d}] {phase:5s} loss={stats['loss']:.3f} "
                   f"ce={stats['ce']:.3f} clst={stats['cluster']:.3f} sep={stats['sep']:.3f} "
-                  f"| test_acc={acc:.3f}")
+                  f"lr={joint_opt.param_groups[0]['lr']:.1e} | test_acc={acc:.3f}")
 
         if should_push(epoch, cfg):
             push_meta = _distributed_push(core, push_loader, cfg)
@@ -194,6 +217,9 @@ def run_training(cfg, model, train_loader, test_loader, push_loader, train_sampl
                 train_one_epoch(model, train_loader, last_opt, cfg)
             if main:
                 print(f"           last-layer done -> test_acc={evaluate(model, test_loader, cfg):.3f}")
+
+        # Rolling checkpoint at end of epoch (rank 0; atomic) — enables --resume / chaining.
+        checkpoint.save_if_main(cfg, core, optimizers, joint_sched, epoch, push_meta)
 
     return push_meta
 
@@ -318,6 +344,14 @@ def main(cfg: ProtoPNetConfig | None = None) -> None:
         build_dataloaders(cfg, ctx)
 
     model = ProtoPNet(cfg).to(cfg.device)
+
+    # Resume: load + validate the checkpoint (every rank), then restore MODEL weights BEFORE
+    # SyncBN/DDP wrap so DDP's construction-time broadcast carries the resumed weights. The
+    # optimizer / scheduler / epoch / RNG are restored later inside run_training.
+    ckpt = checkpoint.maybe_load(cfg)
+    if ckpt is not None:
+        checkpoint.load_model_state(dist_utils.unwrap_model(model), ckpt)
+
     if ctx.distributed and cfg.sync_batchnorm and ctx.device.startswith("cuda"):
         model = nn.SyncBatchNorm.convert_sync_batchnorm(model)   # cross-GPU batch stats in joint phase
     model = dist_utils.wrap_ddp(model, ctx)
@@ -328,7 +362,8 @@ def main(cfg: ProtoPNetConfig | None = None) -> None:
               f"({cfg.prototypes_per_class}/class × {cfg.num_classes} classes), "
               f"device={cfg.device}, world_size={ctx.world_size}")
 
-    push_meta = run_training(cfg, model, train_loader, test_loader, push_loader, train_sampler)
+    push_meta = run_training(cfg, model, train_loader, test_loader, push_loader,
+                             train_sampler, ckpt=ckpt)
 
     if dist_utils.is_main_process():                # visualize once, on rank 0
         visualize_prototypes(cfg, dist_utils.unwrap_model(model), test_set, push_set, push_meta)
@@ -337,5 +372,35 @@ def main(cfg: ProtoPNetConfig | None = None) -> None:
     dist_utils.cleanup()
 
 
+def _cli_config() -> ProtoPNetConfig:
+    """Build a config from CLI flags. Only the commonly-overridden knobs are exposed;
+    everything else stays at the `config.py` defaults. Same argv on every torchrun rank.
+    """
+    import argparse
+
+    p = argparse.ArgumentParser(description="Train the ProtoPNet POC on (a subset of) CUB.")
+    p.add_argument("--resume", nargs="?", const="auto", default=None,
+                   help="Resume training. Bare --resume auto-detects <out_dir>/<ckpt_name>; "
+                        "or pass an explicit checkpoint path.")
+    p.add_argument("--out-dir", default=None, help="Override cfg.out_dir (checkpoints + figures).")
+    p.add_argument("--data-root", default=None, help="CUB root (else CUB_ROOT env var).")
+    p.add_argument("--epochs", type=int, default=None)
+    p.add_argument("--num-classes", type=int, default=None)
+    args = p.parse_args()
+
+    cfg = ProtoPNetConfig()
+    if args.resume is not None:
+        cfg.resume = args.resume
+    if args.out_dir is not None:
+        cfg.out_dir = args.out_dir
+    if args.data_root is not None:
+        cfg.data_root = args.data_root
+    if args.epochs is not None:
+        cfg.epochs = args.epochs
+    if args.num_classes is not None:
+        cfg.num_classes = args.num_classes
+    return cfg
+
+
 if __name__ == "__main__":
-    main()
+    main(_cli_config())

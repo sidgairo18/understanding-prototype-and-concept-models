@@ -37,8 +37,16 @@ class ProtoPNetConfig:
     push_every: int = 5              # run prototype push/projection every N epochs
     last_layer_iters: int = 20        # convex last-layer optimization steps after each push
     lr: float = 1e-3
+    lr_step_size: int = 5             # joint-phase StepLR: decay every N joint epochs (paper uses StepLR)
+    lr_gamma: float = 0.1             # joint-phase StepLR decay factor
     batch_size: int = 32
     num_workers: int = 4
+
+    # --- checkpointing / resume ---
+    # None -> start fresh; "auto" -> resume <out_dir>/<ckpt_name> if present (chaining-friendly);
+    # or an explicit checkpoint path. Settable on the CLI via --resume [PATH].
+    resume: str | None = None
+    ckpt_name: str = "ckpt_last.pt"   # rolling checkpoint filename under out_dir
 
     # --- misc ---
     seed: int = 0

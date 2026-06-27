@@ -87,11 +87,29 @@ preserved.
   run) — that re-optimization step is essential.
 - Keep ε small but nonzero; it sets the similarity ceiling as d²→0.
 
-## Verified (synthetic smoke test)
+## Checkpointing & resume (`checkpoint.py`)
+
+A rolling `ckpt_last.pt` is written under `out_dir` at the end of every epoch, **atomically**
+(temp file + `os.replace`) so a walltime kill mid-write (chained SLURM slots) can't corrupt it.
+It stores the model, **all three** optimizers (warm/joint/last), the joint `StepLR` schedule,
+the epoch, the latest push metadata, and torch/CUDA RNG. `--resume` (`resume="auto"`) loads it,
+**validates** the architecture against the config (num_classes / prototypes_per_class /
+prototype_dim / backbone — mismatch → hard error), restores model weights *before* the DDP wrap
+(so the construction-time broadcast carries them), then restores optimizers/scheduler/RNG/epoch
+inside `run_training` and continues at `epoch+1`. DDP: rank 0 saves, every rank loads.
+
+Added a joint-phase `StepLR` (paper uses StepLR) — `lr_step_size` / `lr_gamma` in config —
+so there is a real LR schedule to checkpoint; it steps once per joint epoch.
+
+## Verified (synthetic smoke tests)
 - Forward shapes; loss + cluster cost decrease; test acc → 1.0 on a learnable toy set.
 - Push mutates all prototypes and returns per-prototype source metadata.
 - "This looks like that" figures render (test heatmap ↔ source-patch heatmap).
+- **Resume**: train 3 epochs → resume to 6; model weights restored exactly (prototypes match),
+  3 optimizers + scheduler + epoch + push_meta restored, run continues 3→5; arch-mismatch
+  refused; already-complete resume is a no-op.
 
 ## TODO (when scaling to real CUB)
 - [ ] Run on full/few-class CUB with `pretrained=True` and report the signature figure.
 - [ ] Optional: exact receptive-field bbox crops for prototypes (vs. upsampled heatmap).
+- [ ] Optional: keep a `ckpt_best.pt` (by test acc) alongside the rolling `ckpt_last.pt`.

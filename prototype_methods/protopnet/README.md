@@ -79,7 +79,19 @@ loader** from `common/data/cub.py`.
 ```bash
 export CUB_ROOT=/path/to/CUB_200_2011
 python -m prototype_methods.protopnet.train          # tiny default: few classes, few epochs
+python -m prototype_methods.protopnet.train --resume # continue from runs/ckpt_last.pt if present
 ```
+
+Common CLI overrides: `--resume [PATH]`, `--out-dir`, `--data-root`, `--epochs`,
+`--num-classes`. Multi-GPU: `torchrun --standalone --nproc_per_node=N -m
+prototype_methods.protopnet.train` (DDP engages automatically).
+
+**Checkpointing / resume.** A rolling `ckpt_last.pt` is written (atomically) under `out_dir`
+at the end of every epoch — model + all three optimizers (warm/joint/last) + the joint
+`StepLR` schedule + epoch + push metadata + RNG. `--resume` (or `resume="auto"`) validates
+the checkpoint's architecture against the config, then continues from the next epoch. This
+is what makes SLURM job-chaining continue (rather than restart) across walltime windows
+(see `scripts/slurm/`).
 
 **Signature artifact:** for a handful of test images, a heatmap per top prototype showing
 the patch it matches, plus the prototype's source training patch — the literal *"this
