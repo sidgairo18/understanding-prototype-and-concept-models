@@ -174,10 +174,11 @@ def run_training(cfg, model, train_loader, test_loader, push_loader,
         joint_opt, step_size=cfg.lr_step_size, gamma=cfg.lr_gamma)
     optimizers = {"warm": warm_opt, "joint": joint_opt, "last": last_opt}
     push_meta: list = [None] * core.num_prototypes
+    best_acc = -1.0
 
     start_epoch = 0
     if ckpt is not None:
-        start_epoch, restored_meta = checkpoint.restore_train_state(
+        start_epoch, restored_meta, best_acc = checkpoint.restore_train_state(
             optimizers, joint_sched, ckpt, cfg)
         if restored_meta is not None:
             push_meta = restored_meta
@@ -209,18 +210,26 @@ def run_training(cfg, model, train_loader, test_loader, push_loader,
 
         if should_push(epoch, cfg):
             push_meta = _distributed_push(core, push_loader, cfg)
-            acc_after = evaluate(model, test_loader, cfg)
+            acc = evaluate(model, test_loader, cfg)         # post-push, pre-last-layer
             if main:
-                print(f"           push -> test_acc={acc_after:.3f}; optimizing last layer...")
+                print(f"           push -> test_acc={acc:.3f}; optimizing last layer...")
             core.set_mode("last")
             for _ in range(cfg.last_layer_iters):
                 train_one_epoch(model, train_loader, last_opt, cfg)
+            acc = evaluate(model, test_loader, cfg)         # end-of-epoch accuracy
             if main:
-                print(f"           last-layer done -> test_acc={evaluate(model, test_loader, cfg):.3f}")
+                print(f"           last-layer done -> test_acc={acc:.3f}")
 
-        # Rolling checkpoint at end of epoch (rank 0; atomic) — enables --resume / chaining.
-        checkpoint.save_if_main(cfg, core, optimizers, joint_sched, epoch, push_meta)
+        # Track the best end-of-epoch accuracy; write ckpt_last always + ckpt_best on a new best.
+        is_best = acc > best_acc
+        best_acc = max(best_acc, acc)
+        checkpoint.save_if_main(cfg, core, optimizers, joint_sched, epoch, push_meta,
+                                best_acc, acc, is_best)
+        if is_best and main:
+            print(f"           * new best test_acc={acc:.3f} -> {cfg.best_ckpt_name}")
 
+    if main:
+        print(f"best test_acc={best_acc:.3f} (saved to {cfg.best_ckpt_name})")
     return push_meta
 
 

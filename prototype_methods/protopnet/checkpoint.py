@@ -40,20 +40,28 @@ _WARN_KEYS = ("img_size", "images_per_class")
 
 # --------------------------------------------------------------------------- paths / state
 def latest_path(cfg) -> str:
-    """Path of the rolling checkpoint for this run."""
+    """Path of the rolling 'latest' checkpoint for this run."""
     return os.path.join(cfg.out_dir, cfg.ckpt_name)
+
+
+def best_path(cfg) -> str:
+    """Path of the 'best test accuracy so far' checkpoint for this run."""
+    return os.path.join(cfg.out_dir, cfg.best_ckpt_name)
 
 
 def _arch_snapshot(cfg) -> dict:
     return {k: getattr(cfg, k) for k in (_ARCH_KEYS + _WARN_KEYS)}
 
 
-def build_state(core, optimizers: dict, scheduler, epoch: int, push_meta, cfg) -> dict:
+def build_state(core, optimizers: dict, scheduler, epoch: int, push_meta, cfg,
+                best_acc: float, acc: float) -> dict:
     """Assemble the full checkpoint dict from the live training objects."""
     cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
     return {
         "format": CKPT_FORMAT,
         "epoch": epoch,
+        "acc": acc,                 # this epoch's end-of-epoch test accuracy
+        "best_acc": best_acc,       # running best test accuracy (for best-ckpt tracking)
         "model": core.state_dict(),
         "optimizers": {name: opt.state_dict() for name, opt in optimizers.items()},
         "scheduler": scheduler.state_dict(),
@@ -71,11 +79,16 @@ def atomic_save(state: dict, path: str) -> None:
     os.replace(tmp, path)  # atomic on POSIX
 
 
-def save_if_main(cfg, core, optimizers: dict, scheduler, epoch: int, push_meta) -> None:
-    """Write the rolling checkpoint on rank 0 only, then barrier so ranks stay in lockstep."""
+def save_if_main(cfg, core, optimizers: dict, scheduler, epoch: int, push_meta,
+                 best_acc: float, acc: float, is_best: bool) -> None:
+    """On rank 0: write the rolling checkpoint, and (if this is the best so far) also the
+    best checkpoint — built once, written to both paths. Barrier so ranks stay in lockstep.
+    """
     if dist_utils.is_main_process():
-        atomic_save(build_state(core, optimizers, scheduler, epoch, push_meta, cfg),
-                    latest_path(cfg))
+        state = build_state(core, optimizers, scheduler, epoch, push_meta, cfg, best_acc, acc)
+        atomic_save(state, latest_path(cfg))
+        if is_best:
+            atomic_save(state, best_path(cfg))
     dist_utils.barrier()
 
 
@@ -142,8 +155,12 @@ def load_model_state(core, ckpt) -> None:
             f"unexpected={unexpected}.")
 
 
-def restore_train_state(optimizers: dict, scheduler, ckpt, cfg) -> tuple[int, list | None]:
-    """Restore the three optimizers, the scheduler, and RNG. Return (start_epoch, push_meta)."""
+def restore_train_state(optimizers: dict, scheduler, ckpt, cfg) -> tuple[int, list | None, float]:
+    """Restore the three optimizers, the scheduler, and RNG.
+
+    Returns ``(start_epoch, push_meta, best_acc)``. ``best_acc`` lets best-checkpoint tracking
+    continue across a resume so a worse post-resume epoch never overwrites the best checkpoint.
+    """
     saved_opts = ckpt["optimizers"]
     for name, opt in optimizers.items():
         if name not in saved_opts:
@@ -151,7 +168,7 @@ def restore_train_state(optimizers: dict, scheduler, ckpt, cfg) -> tuple[int, li
         opt.load_state_dict(saved_opts[name])
     scheduler.load_state_dict(ckpt["scheduler"])
     _restore_rng(ckpt.get("rng"))
-    return ckpt["epoch"] + 1, ckpt.get("push_meta")
+    return ckpt["epoch"] + 1, ckpt.get("push_meta"), ckpt.get("best_acc", -1.0)
 
 
 def _restore_rng(rng) -> None:

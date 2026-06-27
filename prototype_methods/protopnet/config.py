@@ -46,7 +46,8 @@ class ProtoPNetConfig:
     # None -> start fresh; "auto" -> resume <out_dir>/<ckpt_name> if present (chaining-friendly);
     # or an explicit checkpoint path. Settable on the CLI via --resume [PATH].
     resume: str | None = None
-    ckpt_name: str = "ckpt_last.pt"   # rolling checkpoint filename under out_dir
+    ckpt_name: str = "ckpt_last.pt"   # rolling 'latest' checkpoint filename under out_dir
+    best_ckpt_name: str = "ckpt_best.pt"  # best-test-accuracy checkpoint filename under out_dir
 
     # --- misc ---
     seed: int = 0

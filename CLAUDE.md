@@ -88,6 +88,43 @@ POC unless we later decide to add one. Update the **Status** column as POCs prog
   `python -m prototype_methods.protopnet.train`. Each POC's README documents its exact
   command and the signature artifact it produces.
 
+## Shared training infrastructure (wire into every POC's `train.py`)
+
+ProtoPNet is the **reference implementation** for the cross-cutting machinery below. Each
+*new* POC's `train.py` should wire in the same pieces (copy the pattern from
+`prototype_methods/protopnet/`) so all POCs train, scale, checkpoint, and run on SLURM the
+same way. Keep the paper's signature mechanism the star; this is the boilerplate around it.
+
+1. **Distributed (DDP) via `common/distributed.py`.** Single-process by default; DDP engages
+   only under `torchrun`. In `main()`: `ctx = init_distributed(...)`, set `cfg.device =
+   ctx.device`; shard with `DistributedSampler` (call `set_epoch` each epoch); `wrap_ddp`;
+   use `unwrap_model()` to reach custom methods; gate prints/saves on `is_main_process()`;
+   reduce metrics with `all_reduce_sum`; `cleanup()` at the end. Backbone-with-frozen-BN POCs
+   should override `Module.train()` to force frozen BN back to `eval()` (see ProtoPNet
+   `model.py` / `notes.md`).
+2. **Checkpointing + `--resume` (per-POC `checkpoint.py`).** Mirror
+   `prototype_methods/protopnet/checkpoint.py`: write a rolling `ckpt_last.pt` **and** a
+   best-metric `ckpt_best.pt` at each epoch end, **atomically** (temp file + `os.replace`)
+   so a walltime kill can't corrupt them; **rank 0 saves, every rank loads**. The checkpoint
+   must hold *all* state needed to continue bit-faithfully: model `state_dict`, **every**
+   optimizer, the LR scheduler, epoch, RNG, running `best_acc`, and any POC-specific state
+   (e.g. ProtoPNet's `push_meta`). On resume, **validate** that the checkpoint's
+   architecture-defining config matches before loading (hard error on mismatch), restore
+   model weights *before* the DDP wrap, then restore optimizer/scheduler/RNG/epoch and
+   continue at `epoch+1`. Load with `weights_only=False` (checkpoints hold non-tensor data).
+3. **`--resume` CLI.** Expose `main(cfg)` plus a small `_cli_config()` (argparse) with at
+   least `--resume [PATH]` (bare = auto-detect `<out_dir>/<ckpt_name>`), `--out-dir`,
+   `--data-root`, `--epochs`, `--num-classes`. Same argv reaches every `torchrun` rank.
+4. **SLURM launchers (`scripts/slurm/`).** `train_poc.sh <poc>` maps the POC name to its
+   train module and submits via `_sbatch_submit.sh` (partitions `gpu16,gpu17,gpu20,gpu22,gpu24`;
+   conda env `proto-concept`; `torchrun` for multi-GPU). **Job chaining** (`CHAIN_JOBS=N` →
+   array `-a 1-N%1`) auto-appends `--resume`, so a new POC gets chaining *for free* once its
+   `train.py` implements the `--resume` hook above. Add the POC to the `case` in
+   `train_poc.sh` if it isn't already.
+
+When a POC genuinely needs a new shared capability, add it to `common/` (or the shared
+launcher) rather than copying it per POC.
+
 ## Environment & setup
 
 ```bash
