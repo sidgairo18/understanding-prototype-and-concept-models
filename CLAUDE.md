@@ -121,6 +121,13 @@ same way. Keep the paper's signature mechanism the star; this is the boilerplate
    array `-a 1-N%1`) auto-appends `--resume`, so a new POC gets chaining *for free* once its
    `train.py` implements the `--resume` hook above. Add the POC to the `case` in
    `train_poc.sh` if it isn't already.
+5. **Experiment tracking via `common/wandb_logger.py`.** Construct `WandbLogger(cfg, ctx)`
+   (rank-0-only; a **no-op** unless `cfg.wandb` / `--wandb`, so tiny/smoke runs need neither
+   the dependency nor a login). Log per-epoch scalars with `logger.log({...}, step=epoch)`,
+   the signature artifact with `logger.log_figure(name, fig)`, then `logger.finish()`. Add
+   the `wandb*` fields to the POC's `config.py` and the `--wandb[/-project/-run-name/-mode]`
+   CLI flags (copy ProtoPNet). The logger reads settings with `getattr` defaults, so it
+   works even if a POC config defines only some fields — and covers eval scripts too.
 
 When a POC genuinely needs a new shared capability, add it to `common/` (or the shared
 launcher) rather than copying it per POC.

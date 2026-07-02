@@ -15,3 +15,6 @@ timm>=0.9
 
 # Progress bars / utilities
 tqdm>=4.64
+
+# Experiment tracking (optional; logging is a no-op unless enabled via config/--wandb)
+wandb>=0.16

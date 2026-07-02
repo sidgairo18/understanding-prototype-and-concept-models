@@ -27,6 +27,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 
 from common import distributed as dist_utils
 from common.data.cub import CUB200, build_transforms
+from common.wandb_logger import WandbLogger
 from . import checkpoint
 from .config import ProtoPNetConfig
 from .model import ProtoPNet
@@ -156,17 +157,19 @@ def _distributed_push(core, push_loader, cfg):
 
 
 def run_training(cfg, model, train_loader, test_loader, push_loader,
-                 train_sampler=None, ckpt=None) -> list:
+                 train_sampler=None, ckpt=None, logger=None) -> list:
     """Run the full alternating schedule. Returns the metadata from the final push.
 
     ``model`` may be a DDP wrapper; ``core`` is always the underlying ProtoPNet for the
     custom methods (``set_mode``, ``num_prototypes``, push). Only rank 0 logs and writes
     checkpoints. If ``ckpt`` is given (from :func:`checkpoint.maybe_load`), the optimizers,
     LR scheduler, RNG, epoch and push metadata are restored and training continues from the
-    next epoch. A rolling checkpoint is written at the end of every epoch.
+    next epoch. A rolling checkpoint is written at the end of every epoch. ``logger`` is a
+    :class:`WandbLogger` (a no-op when disabled / not rank 0).
     """
     core = dist_utils.unwrap_model(model)
     main = dist_utils.is_main_process()
+    logger = logger or WandbLogger(enabled=False)
     warm_opt, joint_opt, last_opt = _build_optimizers(core, cfg)
     # Joint-phase LR schedule (paper uses StepLR on the joint optimizer). Saved/restored so
     # decay continues correctly across a resume.
@@ -228,6 +231,14 @@ def run_training(cfg, model, train_loader, test_loader, push_loader,
         if is_best and main:
             print(f"           * new best test_acc={acc:.3f} -> {cfg.best_ckpt_name}")
 
+        logger.log({
+            "train/loss": stats["loss"], "train/ce": stats["ce"],
+            "train/cluster": stats["cluster"], "train/separation": stats["sep"],
+            "train/l1": stats["l1"], "train/lr": joint_opt.param_groups[0]["lr"],
+            "test/acc": acc, "test/best_acc": best_acc,
+        }, step=epoch)
+
+    logger.log_summary({"best_acc": best_acc, "final_acc": acc})
     if main:
         print(f"best test_acc={best_acc:.3f} (saved to {cfg.best_ckpt_name})")
     return push_meta
@@ -246,16 +257,17 @@ def build_dataloaders(cfg: ProtoPNetConfig, ctx: dist_utils.DistContext | None =
 
     train_set = CUB200(
         data_root=cfg.data_root, train=True, num_classes=cfg.num_classes,
-        images_per_class=cfg.images_per_class,
-        transform=build_transforms(cfg.img_size, train=True),
+        images_per_class=cfg.images_per_class, crop_to_bbox=cfg.crop_to_bbox,
+        transform=build_transforms(cfg.img_size, train=True, strong=cfg.strong_aug),
     )
     test_set = CUB200(
         data_root=cfg.data_root, train=False, num_classes=cfg.num_classes,
+        crop_to_bbox=cfg.crop_to_bbox,
         transform=build_transforms(cfg.img_size, train=False),
     )
     push_set = CUB200(  # same train images, but normalize-only transform + stable order
         data_root=cfg.data_root, train=True, num_classes=cfg.num_classes,
-        images_per_class=cfg.images_per_class,
+        images_per_class=cfg.images_per_class, crop_to_bbox=cfg.crop_to_bbox,
         transform=build_transforms(cfg.img_size, train=False),
     )
 
@@ -279,7 +291,8 @@ def build_dataloaders(cfg: ProtoPNetConfig, ctx: dist_utils.DistContext | None =
 
 # ---------------------------------------------------------------------------- visualization
 @torch.no_grad()
-def visualize_prototypes(cfg, model, test_set, push_set, push_meta, n_images=4, top_k=3):
+def visualize_prototypes(cfg, model, test_set, push_set, push_meta, n_images=4, top_k=3,
+                         logger=None):
     """Save the signature "this looks like that" figures.
 
     For a few test images: predict the class, take the top-K most-activated prototypes of
@@ -336,6 +349,8 @@ def visualize_prototypes(cfg, model, test_set, push_set, push_meta, n_images=4, 
         fig.tight_layout()
         out = os.path.join(cfg.out_dir, f"this_looks_like_that_{i:02d}.png")
         fig.savefig(out, dpi=110)
+        if logger is not None:
+            logger.log_figure(f"this_looks_like_that/{i:02d}", fig, step=cfg.epochs)
         plt.close(fig)
         print(f"saved {out}")
 
@@ -365,6 +380,8 @@ def main(cfg: ProtoPNetConfig | None = None) -> None:
         model = nn.SyncBatchNorm.convert_sync_batchnorm(model)   # cross-GPU batch stats in joint phase
     model = dist_utils.wrap_ddp(model, ctx)
 
+    logger = WandbLogger(cfg, ctx)                  # no-op unless cfg.wandb and rank 0
+
     if dist_utils.is_main_process():
         core = dist_utils.unwrap_model(model)
         print(f"ProtoPNet: {core.num_prototypes} prototypes "
@@ -372,12 +389,14 @@ def main(cfg: ProtoPNetConfig | None = None) -> None:
               f"device={cfg.device}, world_size={ctx.world_size}")
 
     push_meta = run_training(cfg, model, train_loader, test_loader, push_loader,
-                             train_sampler, ckpt=ckpt)
+                             train_sampler, ckpt=ckpt, logger=logger)
 
     if dist_utils.is_main_process():                # visualize once, on rank 0
-        visualize_prototypes(cfg, dist_utils.unwrap_model(model), test_set, push_set, push_meta)
+        visualize_prototypes(cfg, dist_utils.unwrap_model(model), test_set, push_set,
+                             push_meta, logger=logger)
         print("done.")
 
+    logger.finish()
     dist_utils.cleanup()
 
 
@@ -394,7 +413,19 @@ def _cli_config() -> ProtoPNetConfig:
     p.add_argument("--out-dir", default=None, help="Override cfg.out_dir (checkpoints + figures).")
     p.add_argument("--data-root", default=None, help="CUB root (else CUB_ROOT env var).")
     p.add_argument("--epochs", type=int, default=None)
+    p.add_argument("--warm-epochs", type=int, default=None)
+    p.add_argument("--push-every", type=int, default=None, help="Prototype push interval (paper: 10).")
+    p.add_argument("--lr-step-size", type=int, default=None,
+                   help="Joint-LR StepLR interval in joint epochs (raise for long runs; tiny default=5).")
+    p.add_argument("--lr-gamma", type=float, default=None, help="Joint-LR StepLR decay factor.")
     p.add_argument("--num-classes", type=int, default=None)
+    p.add_argument("--batch-size", type=int, default=None, help="Per-GPU batch size (per DDP rank).")
+    p.add_argument("--crop-bbox", action="store_true", help="Crop images to the CUB bbox (paper recipe).")
+    p.add_argument("--strong-aug", action="store_true", help="Stronger online augmentation (rotation/shear/perspective).")
+    p.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging.")
+    p.add_argument("--wandb-project", default=None)
+    p.add_argument("--wandb-run-name", default=None)
+    p.add_argument("--wandb-mode", default=None, choices=["online", "offline", "disabled"])
     args = p.parse_args()
 
     cfg = ProtoPNetConfig()
@@ -406,8 +437,30 @@ def _cli_config() -> ProtoPNetConfig:
         cfg.data_root = args.data_root
     if args.epochs is not None:
         cfg.epochs = args.epochs
+    if args.warm_epochs is not None:
+        cfg.warm_epochs = args.warm_epochs
+    if args.push_every is not None:
+        cfg.push_every = args.push_every
+    if args.lr_step_size is not None:
+        cfg.lr_step_size = args.lr_step_size
+    if args.lr_gamma is not None:
+        cfg.lr_gamma = args.lr_gamma
     if args.num_classes is not None:
         cfg.num_classes = args.num_classes
+    if args.batch_size is not None:
+        cfg.batch_size = args.batch_size
+    if args.crop_bbox:
+        cfg.crop_to_bbox = True
+    if args.strong_aug:
+        cfg.strong_aug = True
+    if args.wandb:
+        cfg.wandb = True
+    if args.wandb_project is not None:
+        cfg.wandb_project = args.wandb_project
+    if args.wandb_run_name is not None:
+        cfg.wandb_run_name = args.wandb_run_name
+    if args.wandb_mode is not None:
+        cfg.wandb_mode = args.wandb_mode
     return cfg
 
 

@@ -220,3 +220,16 @@ __marimo__/
 # custom
 papers/*
 data/*
+
+# training / experiment artifacts (generated — never commit)
+# (gitignore has no inline comments — keep patterns on their own lines)
+# wandb local run data (repo root)
+wandb/
+# ./runs (slurm logs) AND per-POC prototype_methods/*/runs (checkpoints + figures)
+runs/
+# checkpoints (ckpt_last.pt / ckpt_best.pt)
+*.pt
+*.pth
+*.ckpt
+# slurm stdout logs
+*.out

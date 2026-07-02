@@ -86,6 +86,11 @@ Common CLI overrides: `--resume [PATH]`, `--out-dir`, `--data-root`, `--epochs`,
 `--num-classes`. Multi-GPU: `torchrun --standalone --nproc_per_node=N -m
 prototype_methods.protopnet.train` (DDP engages automatically).
 
+**Experiment tracking (wandb).** Off by default (a no-op). Enable with `--wandb`
+(`--wandb-project`, `--wandb-run-name`, `--wandb-mode online|offline|disabled`); logs
+per-epoch loss/cluster/sep/L1/lr/test-acc and the "this looks like that" figures on rank 0.
+Uses the shared `common/wandb_logger.py` that every POC inherits.
+
 **Checkpointing / resume.** A rolling `ckpt_last.pt` is written (atomically) under `out_dir`
 at the end of every epoch — model + all three optimizers (warm/joint/last) + the joint
 `StepLR` schedule + epoch + push metadata + RNG. `--resume` (or `resume="auto"`) validates

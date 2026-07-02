@@ -16,6 +16,8 @@ class ProtoPNetConfig:
     num_classes: int = 5              # tiny default; full CUB = 200
     images_per_class: int | None = None
     img_size: int = 224
+    crop_to_bbox: bool = False        # crop to CUB bbox (paper-faithful; birds cropped)
+    strong_aug: bool = False          # stronger online augmentation (rotation/shear/perspective)
 
     # --- backbone / features ---
     backbone: str = "resnet34"        # from common.backbones; resnet50 in the paper
@@ -48,6 +50,13 @@ class ProtoPNetConfig:
     resume: str | None = None
     ckpt_name: str = "ckpt_last.pt"   # rolling 'latest' checkpoint filename under out_dir
     best_ckpt_name: str = "ckpt_best.pt"  # best-test-accuracy checkpoint filename under out_dir
+
+    # --- experiment tracking (wandb; a no-op unless enabled via config/--wandb) ---
+    wandb: bool = False
+    wandb_project: str = "understanding-protos"
+    wandb_entity: str | None = None
+    wandb_run_name: str | None = None
+    wandb_mode: str = "online"        # online | offline | disabled
 
     # --- misc ---
     seed: int = 0

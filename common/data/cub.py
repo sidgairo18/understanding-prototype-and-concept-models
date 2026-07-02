@@ -50,29 +50,37 @@ def resolve_root(data_root: str | None) -> str:
     return root
 
 
-def build_transforms(img_size: int = 224, train: bool = True) -> transforms.Compose:
+def build_transforms(img_size: int = 224, train: bool = True,
+                     strong: bool = False) -> transforms.Compose:
     """Standard ImageNet-style transforms used across POCs.
 
     Individual POCs can override this (e.g. ProtoPNet uses extra augmentation, SCOPS
     uses paired geometric transforms), but this is the sensible shared default.
+
+    ``strong=True`` adds paper-style geometric augmentation for *training* (random
+    rotation / shear / perspective). ProtoPNet's recipe augments the (bbox-cropped)
+    training set this way; we apply it **online** here rather than pre-expanding ~30× to
+    disk — same regularization, no dataset generation step.
     """
-    if train:
-        return transforms.Compose(
-            [
-                transforms.Resize((img_size + 32, img_size + 32)),
-                transforms.RandomCrop(img_size),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-            ]
-        )
-    return transforms.Compose(
-        [
+    if not train:
+        return transforms.Compose([
             transforms.Resize((img_size, img_size)),
             transforms.ToTensor(),
             transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+        ])
+
+    ops = [
+        transforms.Resize((img_size + 32, img_size + 32)),
+        transforms.RandomCrop(img_size),
+        transforms.RandomHorizontalFlip(),
+    ]
+    if strong:
+        ops += [
+            transforms.RandomAffine(degrees=15, shear=10),
+            transforms.RandomPerspective(distortion_scale=0.2, p=0.5),
         ]
-    )
+    ops += [transforms.ToTensor(), transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD)]
+    return transforms.Compose(ops)
 
 
 @dataclass
@@ -94,6 +102,8 @@ class CUB200(Dataset):
             run tiny.
         images_per_class: cap images kept per class (None = all). Further shrinks the run.
         return_bbox: if True, ``__getitem__`` also returns the (x, y, w, h) bbox.
+        crop_to_bbox: if True, crop each image to its CUB bounding box before transforming
+            (the ProtoPNet paper trains/evaluates on bird-cropped images).
 
     ``__getitem__`` returns ``(image_tensor, label)`` — or ``(image, label, bbox)`` when
     ``return_bbox`` is set. Labels are remapped to ``0..num_classes-1`` over the kept
@@ -108,16 +118,18 @@ class CUB200(Dataset):
         num_classes: int | None = 10,
         images_per_class: int | None = None,
         return_bbox: bool = False,
+        crop_to_bbox: bool = False,
     ) -> None:
         self.root = resolve_root(data_root)
         self.train = train
         self.transform = transform or build_transforms(train=train)
         self.return_bbox = return_bbox
+        self.crop_to_bbox = crop_to_bbox
 
         images = self._read_kv("images.txt")                 # id -> relative path
         labels = self._read_kv("image_class_labels.txt")     # id -> class_id (1-indexed)
         splits = self._read_kv("train_test_split.txt")       # id -> "1"/"0"
-        bboxes = self._read_bboxes() if return_bbox else {}
+        bboxes = self._read_bboxes() if (return_bbox or crop_to_bbox) else {}
 
         # Choose which (original, 1-indexed) class ids to keep.
         all_class_ids = sorted({int(c) for c in labels.values()})
@@ -182,6 +194,9 @@ class CUB200(Dataset):
     def __getitem__(self, idx: int):
         s = self.samples[idx]
         img = Image.open(s.path).convert("RGB")
+        if self.crop_to_bbox and s.bbox is not None:
+            x, y, w, h = s.bbox
+            img = img.crop((x, y, x + w, y + h))     # crop to the bird before transforms
         img = self.transform(img)
         if self.return_bbox:
             return img, s.label, s.bbox
