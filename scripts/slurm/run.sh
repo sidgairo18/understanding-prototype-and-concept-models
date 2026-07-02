@@ -44,16 +44,23 @@ case "${POC}:${PRESET}" in
     export CPUS="${CPUS:-16}"; export MEM="${MEM:-64GB}"
     export EXTRA="--num-classes 200 --epochs 100 --batch-size 20 --lr-step-size 30 \
 --out-dir prototype_methods/protopnet/runs/cub_full ${WANDB_ARGS} --wandb-run-name ${JN}" ;;
-  protopnet:cub_full_paper)   # paper-faithful: bbox-crop + strong aug + push-every-10 schedule
+  protopnet:cub_full_paper)   # paper-faithful: bbox-crop + strong ONLINE aug + push-every-10
     export JN="${JN:-protopnet-cub-full-paper}"; export CHAIN_JOBS="${CHAIN_JOBS:-3}"
     export CPUS="${CPUS:-16}"; export MEM="${MEM:-64GB}"
     export EXTRA="--num-classes 200 --epochs 120 --batch-size 20 \
 --warm-epochs 10 --push-every 10 --lr-step-size 30 --crop-bbox --strong-aug \
 --out-dir prototype_methods/protopnet/runs/cub_full_paper ${WANDB_ARGS} --wandb-run-name ${JN}" ;;
+  protopnet:cub_full_repro)   # paper repro: OFFLINE ~15x augmented (cropped) train set + longer schedule
+    export JN="${JN:-protopnet-cub-full-repro}"; export CHAIN_JOBS="${CHAIN_JOBS:-3}"
+    export CPUS="${CPUS:-16}"; export MEM="${MEM:-64GB}"
+    AUG_DIR="${AUG_DIR:-/BS/generative_modelling_for_image_understanding_2/nobackup/data/cub200_crop_aug_train}"
+    export EXTRA="--num-classes 200 --epochs 40 --batch-size 20 \
+--warm-epochs 2 --push-every 5 --lr-step-size 15 --crop-bbox --aug-train-dir ${AUG_DIR} \
+--out-dir prototype_methods/protopnet/runs/cub_full_repro ${WANDB_ARGS} --wandb-run-name ${JN}" ;;
 
   *)
     echo "Unknown POC:preset '${POC}:${PRESET}'." >&2
-    echo "Available presets: protopnet:{smoke,cub_small,cub_full,cub_full_paper}" >&2
+    echo "Available presets: protopnet:{smoke,cub_small,cub_full,cub_full_paper,cub_full_repro}" >&2
     echo "(pipnet/scops/pdiscoformer presets: add here once those POCs are implemented.)" >&2
     exit 1 ;;
 esac

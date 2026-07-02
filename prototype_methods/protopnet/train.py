@@ -255,11 +255,25 @@ def build_dataloaders(cfg: ProtoPNetConfig, ctx: dist_utils.DistContext | None =
     """
     distributed = ctx is not None and ctx.distributed
 
-    train_set = CUB200(
-        data_root=cfg.data_root, train=True, num_classes=cfg.num_classes,
-        images_per_class=cfg.images_per_class, crop_to_bbox=cfg.crop_to_bbox,
-        transform=build_transforms(cfg.img_size, train=True, strong=cfg.strong_aug),
-    )
+    if cfg.aug_train_dir:
+        # Paper recipe: train on the pre-cropped, offline-augmented ImageFolder set. Its class
+        # dirs ("001.*"…) sort into the same order as CUB200's class ids, so labels line up
+        # with the CUB200 test set. Only a mild online transform on top (aug is already baked in).
+        from torchvision.datasets import ImageFolder
+        train_set = ImageFolder(
+            cfg.aug_train_dir,
+            transform=build_transforms(cfg.img_size, train=True, strong=False),
+        )
+        if len(train_set.classes) != cfg.num_classes:
+            raise ValueError(
+                f"aug_train_dir has {len(train_set.classes)} classes but cfg.num_classes="
+                f"{cfg.num_classes}. Regenerate with matching --num-classes.")
+    else:
+        train_set = CUB200(
+            data_root=cfg.data_root, train=True, num_classes=cfg.num_classes,
+            images_per_class=cfg.images_per_class, crop_to_bbox=cfg.crop_to_bbox,
+            transform=build_transforms(cfg.img_size, train=True, strong=cfg.strong_aug),
+        )
     test_set = CUB200(
         data_root=cfg.data_root, train=False, num_classes=cfg.num_classes,
         crop_to_bbox=cfg.crop_to_bbox,
@@ -422,6 +436,8 @@ def _cli_config() -> ProtoPNetConfig:
     p.add_argument("--batch-size", type=int, default=None, help="Per-GPU batch size (per DDP rank).")
     p.add_argument("--crop-bbox", action="store_true", help="Crop images to the CUB bbox (paper recipe).")
     p.add_argument("--strong-aug", action="store_true", help="Stronger online augmentation (rotation/shear/perspective).")
+    p.add_argument("--aug-train-dir", default=None,
+                   help="Offline-augmented ImageFolder train set (from common.data.augment_cub).")
     p.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging.")
     p.add_argument("--wandb-project", default=None)
     p.add_argument("--wandb-run-name", default=None)
@@ -453,6 +469,8 @@ def _cli_config() -> ProtoPNetConfig:
         cfg.crop_to_bbox = True
     if args.strong_aug:
         cfg.strong_aug = True
+    if args.aug_train_dir is not None:
+        cfg.aug_train_dir = args.aug_train_dir
     if args.wandb:
         cfg.wandb = True
     if args.wandb_project is not None:

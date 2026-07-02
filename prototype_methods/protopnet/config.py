@@ -18,6 +18,9 @@ class ProtoPNetConfig:
     img_size: int = 224
     crop_to_bbox: bool = False        # crop to CUB bbox (paper-faithful; birds cropped)
     strong_aug: bool = False          # stronger online augmentation (rotation/shear/perspective)
+    # Offline-augmented ImageFolder train set (from common.data.augment_cub); None -> use CUB200.
+    # When set, TRAIN reads this pre-cropped+augmented set; test/push still use CUB200(crop).
+    aug_train_dir: str | None = None
 
     # --- backbone / features ---
     backbone: str = "resnet34"        # from common.backbones; resnet50 in the paper
